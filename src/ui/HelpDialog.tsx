@@ -59,7 +59,7 @@ export function HelpDialog(props: { open: boolean; format: ScriptFormat; onClose
               <b>Enter</b> moves to the next element: Character → Dialogue → Character… Press Enter on an empty line to switch it (empty Character → Action, empty Action → Scene Heading).
             </li>
             <li>
-              <b>Tab</b> changes the current line to the next element type, in the order of this table (Action → Character → Parenthetical → Dialogue → Transition…). <b>Shift+Tab</b> goes back one.
+              <b>Tab</b> cycles the current line through <b>Scene Heading → Action → Character → Transition</b>, with or without text; <b>Shift+Tab</b> goes back. For every other element use the menu or <kbd>{ALT}</kbd>+number.
             </li>
             <li>
               <b>Character names are remembered.</b> On a new Character line the list predicts who speaks next, with the likeliest first. Click a name to use it, or pick with <kbd>↓</kbd> and <kbd>Enter</kbd>. Nothing is chosen for you.

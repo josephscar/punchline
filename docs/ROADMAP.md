@@ -7,7 +7,7 @@ The first release covered writing one format well: the editor, the element flow,
 ## Version 2 (this release): more formats, and organizing iterations
 
 - **Formats:** One-Hour Drama (teaser and five acts) and Feature Screenplay (FADE IN: to FADE OUT., no acts), built on a shared screenplay page. A format picker for new scripts and a **Format** setting to switch an existing script.
-- **Tab cycles element types:** Tab always changes the current line to the next element type, and Shift+Tab to the previous one. Suggestions are never chosen automatically; click one, or highlight it with the arrow keys and press Enter.
+- **Tab cycles element types:** Tab cycles the current line through Scene Heading → Action → Character → Transition, and Shift+Tab goes back; other elements are in the menu and on Alt+number. Suggestions are never chosen automatically; click one, or highlight it with the arrow keys and press Enter.
 - **Projects:** group a series' episodes, or a film's scripts. New scripts in a project start with its title and format, and character suggestions come from the whole project.
 - **Drafts:** save named iterations with a revision colour and a note; restore one (the current pages are kept as a draft first), or start a new script from it.
 - **Compare:** added, removed and changed lines between any two drafts, down to the word.

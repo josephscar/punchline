@@ -14,7 +14,7 @@ Punchline runs in the browser, works offline and needs no account. Your scripts 
 |---|---|
 | **Script elements** | Scene Heading (slugline), Action, Character, Parenthetical, Dialogue, Transition, Shot (secondary slugline), New Act, End of Act, and **Notes** that never print |
 | **Enter** | Moves through elements the way Final Draft does: Scene Heading → Action, Character → Dialogue → Character… |
-| **Tab** | Changes the current line to the next element type (Action → Character → Parenthetical → Dialogue → Transition…), with or without text. Shift+Tab goes back. |
+| **Tab** | Cycles the current line through Scene Heading → Action → Character → Transition, with or without text. Shift+Tab goes back. Every other element is in the menu and on Alt+number. |
 | **Smart typing** | `int.` becomes a Scene Heading, `smash cut to:` a Transition, `(` in dialogue a Parenthetical, `[[` a Note, `ACT TWO` a New Act |
 | **Character memory** | Names are remembered in this script and in the other scripts of the same project (the series' recurring cast). On a new Character line Punchline lists who's likely to talk next, with the other half of the conversation first. |
 | **Suggestions** | Scene headings in three steps (INT./EXT. → locations you've used → DAY / NIGHT / CONTINUOUS…), transitions, act names in each format's order, parentheticals, `(V.O.)` / `(O.S.)`. Nothing is picked for you: click a suggestion, or highlight one with ↓ and press Enter. |
@@ -68,7 +68,7 @@ Projects, scripts and drafts are saved automatically to the browser's IndexedDB,
 |---|---|---|
 | Enter | any element | next element (Scene Heading → Action, Character → Dialogue, Dialogue → Character, Transition → Scene Heading, New Act → Scene Heading…) |
 | Enter | an empty element | switches it: empty Character → Action, empty Action → Scene Heading |
-| Tab / Shift+Tab | any element | next / previous element type: Scene Heading → Action → Character → Parenthetical → Dialogue → Transition → Shot → New Act → End of Act → Note |
+| Tab / Shift+Tab | any element | next / previous in Scene Heading → Action → Character → Transition (from any other element, Tab goes to Action) |
 | ↓ / ↑, then Enter | suggestions showing | highlight a suggestion, use it and move on (or just click it) |
 | Esc | suggestions showing | close the list |
 | Alt/⌥ + 1…9, 0 | anywhere | Scene Heading, Action, Character, Parenthetical, Dialogue, Transition, Shot, New Act, End of Act, Note (Ctrl/⌘ + number also works where the browser doesn't reserve it for switching tabs) |

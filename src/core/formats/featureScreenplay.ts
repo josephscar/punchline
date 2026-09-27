@@ -16,7 +16,7 @@ export const featureScreenplay: ScriptFormat = {
   page: SCREENPLAY_PAGE,
   elementOrder: ELEMENTS_WITHOUT_ACTS,
   elements: SCREENPLAY_ELEMENTS,
-  flow: screenplayFlow(ELEMENTS_WITHOUT_ACTS),
+  flow: screenplayFlow(),
   vocabulary: SCREENPLAY_VOCABULARY,
   more: '(MORE)',
   contd: "(CONT'D)",

@@ -28,13 +28,15 @@ export function enterAction(format: ScriptFormat, kind: ElementKind, text: strin
 
 /**
  * Tab / Shift+Tab: the element type after (or before) `kind` in the
- * format's cycle, wrapping around. Works the same whether or not the element
- * has text, so Tab is always "change what this line is".
+ * format's cycle (Scene Heading → Action → Character → Transition), wrapping
+ * around. Works the same whether or not the element has text, so Tab is
+ * always "change what this line is". From any other element, Tab and
+ * Shift+Tab both go to Action.
  */
 export function nextInCycle(format: ScriptFormat, kind: ElementKind, backwards = false): ElementKind {
   const cycle = format.flow.tabCycle;
   const at = cycle.indexOf(kind);
-  if (at === -1) return cycle[0];
+  if (at === -1) return cycle.includes('action') ? 'action' : cycle[0];
   const step = backwards ? -1 : 1;
   return cycle[(at + step + cycle.length) % cycle.length];
 }

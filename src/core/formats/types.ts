@@ -42,7 +42,8 @@ export interface ElementFlow {
   emptyEnter: Partial<Record<ElementKind, ElementKind>>;
   /**
    * Tab turns the current element into the next one in this list, Shift+Tab
-   * the previous one, wrapping around at either end.
+   * the previous one, wrapping around at either end. From an element not in
+   * the list, Tab goes to Action.
    */
   tabCycle: ElementKind[];
 }

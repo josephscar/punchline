@@ -15,7 +15,7 @@ describe('formats', () => {
 
   it('gives every format a complete, consistent definition', () => {
     for (const f of FORMATS) {
-      expect(f.flow.tabCycle).toEqual(f.elementOrder);
+      expect(f.flow.tabCycle).toEqual(['scene_heading', 'action', 'character', 'transition']);
       for (const kind of f.elementOrder) expect(f.elements[kind].label).toBeTruthy();
       const shortcuts = f.elementOrder.map((k) => f.elements[k].shortcut);
       expect(new Set(shortcuts).size).toBe(shortcuts.length);

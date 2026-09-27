@@ -63,7 +63,7 @@ test('Enter moves through single-cam elements and Tab cycles the element type', 
   await k.press('Enter'); // → Dialogue
   await k.type('Soup is ready!');
   await k.press('Enter'); // → Character
-  await k.press('Tab'); // Character → Parenthetical
+  await k.press('Alt+4'); // → Parenthetical (not in the Tab cycle)
   await k.type('beat');
   await k.press('Enter'); // → Dialogue
   await k.type('Anyone?');
@@ -89,20 +89,25 @@ test('Enter moves through single-cam elements and Tab cycles the element type', 
   await expect(page.locator('.pl-el[data-kind="scene_heading"]').first()).toHaveCSS('text-transform', 'uppercase');
 });
 
-test('Tab cycles any element, with text or without; Shift+Tab goes back', async ({ page }) => {
+test('Tab cycles Scene Heading, Action, Character and Transition; Shift+Tab goes back', async ({ page }) => {
   await newBlankScript(page);
   const k = page.keyboard;
+  await expect(status(page)).toHaveText('Scene Heading');
   await k.press('Tab');
   await expect(status(page)).toHaveText('Action');
   await k.type('Hello there');
-  for (const expected of ['Character', 'Parenthetical', 'Dialogue', 'Transition', 'Shot']) {
+  for (const expected of ['Character', 'Transition', 'Scene Heading', 'Action']) {
     await k.press('Tab');
     await expect(status(page)).toHaveText(expected);
   }
   await k.press('Shift+Tab');
-  await k.press('Shift+Tab');
+  await expect(status(page)).toHaveText('Scene Heading');
+  // Other elements come from the menu or Alt+number; Tab from them goes to Action.
+  await k.press('Alt+5');
   await expect(status(page)).toHaveText('Dialogue');
-  expect(await elements(page)).toEqual(['dialogue: Hello there']);
+  await k.press('Tab');
+  await expect(status(page)).toHaveText('Action');
+  expect(await elements(page)).toEqual(['action: Hello there']);
 });
 
 test('suggestions are never picked for you: click one, or use the arrows and Enter', async ({ page }) => {
@@ -127,7 +132,7 @@ test('suggestions are never picked for you: click one, or use the arrows and Ent
   await expect(page.locator('.ac-item.is-active')).toHaveCount(0);
   // …but Tab still just changes the element type.
   await k.press('Tab');
-  await expect(status(page)).toHaveText('Parenthetical');
+  await expect(status(page)).toHaveText('Transition');
   await k.press('Shift+Tab');
   await expect(status(page)).toHaveText('Character');
   expect((await elements(page)).at(-1)).toBe('character: ');

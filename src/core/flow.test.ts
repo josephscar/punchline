@@ -28,23 +28,27 @@ describe('Enter', () => {
 });
 
 describe('Tab', () => {
-  it('cycles through the element types in menu order, text or not', () => {
+  it('cycles Scene Heading → Action → Character → Transition, text or not', () => {
     expect(nextInCycle(format, 'scene_heading')).toBe('action');
     expect(nextInCycle(format, 'action')).toBe('character');
-    expect(nextInCycle(format, 'character')).toBe('parenthetical');
-    expect(nextInCycle(format, 'parenthetical')).toBe('dialogue');
-    expect(nextInCycle(format, 'dialogue')).toBe('transition');
-    expect(nextInCycle(format, 'note')).toBe('scene_heading');
+    expect(nextInCycle(format, 'character')).toBe('transition');
+    expect(nextInCycle(format, 'transition')).toBe('scene_heading');
   });
 
   it('goes backwards with Shift', () => {
     expect(nextInCycle(format, 'character', true)).toBe('action');
-    expect(nextInCycle(format, 'scene_heading', true)).toBe('note');
+    expect(nextInCycle(format, 'scene_heading', true)).toBe('transition');
   });
 
-  it('skips elements a format does not use', () => {
-    expect(nextInCycle(featureScreenplay, 'shot')).toBe('note');
-    expect(nextInCycle(featureScreenplay, 'act_start')).toBe('scene_heading');
+  it('goes to Action from elements outside the cycle', () => {
+    for (const kind of ['dialogue', 'parenthetical', 'shot', 'act_start', 'act_end', 'note'] as const) {
+      expect(nextInCycle(format, kind)).toBe('action');
+      expect(nextInCycle(format, kind, true)).toBe('action');
+    }
+  });
+
+  it('is the same in every format', () => {
+    expect(featureScreenplay.flow.tabCycle).toEqual(format.flow.tabCycle);
   });
 });
 

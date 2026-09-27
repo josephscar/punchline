@@ -193,7 +193,15 @@ export const ALL_ELEMENTS: ElementKind[] = [
 /** Elements used by formats without acts (features). */
 export const ELEMENTS_WITHOUT_ACTS: ElementKind[] = ALL_ELEMENTS.filter((k) => k !== 'act_start' && k !== 'act_end');
 
-export function screenplayFlow(order: ElementKind[]): ElementFlow {
+/**
+ * Tab cycles through the four elements a writer switches between most.
+ * Everything else (dialogue follows a character on Enter; parentheticals,
+ * shots, act lines and notes are rarer) is in the element menu and on the
+ * Alt+number keys.
+ */
+export const TAB_CYCLE: ElementKind[] = ['scene_heading', 'action', 'character', 'transition'];
+
+export function screenplayFlow(): ElementFlow {
   return {
     enter: {
       scene_heading: 'action',
@@ -216,8 +224,7 @@ export function screenplayFlow(order: ElementKind[]): ElementFlow {
       shot: 'action',
       note: 'action',
     },
-    // Tab walks the same order as the element menu and the Alt+number keys.
-    tabCycle: order,
+    tabCycle: TAB_CYCLE,
   };
 }
 

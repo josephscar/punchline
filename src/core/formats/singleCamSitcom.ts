@@ -21,7 +21,7 @@ export const singleCamSitcom: ScriptFormat = {
   page: SCREENPLAY_PAGE,
   elementOrder: ALL_ELEMENTS,
   elements: SCREENPLAY_ELEMENTS,
-  flow: screenplayFlow(ALL_ELEMENTS),
+  flow: screenplayFlow(),
   vocabulary: {
     ...SCREENPLAY_VOCABULARY,
     times: [...SCREENPLAY_VOCABULARY.times, 'TALKING HEAD'],
