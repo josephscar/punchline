@@ -1,0 +1,143 @@
+/*
+ * The script page. One character is 1ch (0.1") and one line is 1em, so the
+ * format numbers from src/core/formats map straight onto CSS. The font size
+ * shrinks on narrow screens so the whole 8.5" page always fits.
+ */
+.pl-paper-wrap {
+  --line: 1em;
+  font-size: min(16px, calc((100cqw - 32px) / 54));
+  padding: 24px 16px 96px;
+  display: flex;
+  justify-content: center;
+}
+
+.pl-page {
+  position: relative;
+  box-sizing: content-box;
+  min-height: 60em;
+  background: var(--paper);
+  color: var(--paper-text);
+  box-shadow: var(--paper-shadow);
+  border-radius: 2px;
+  font-family: var(--script-font);
+  line-height: 1;
+}
+/* width & padding come from formatCss(); keep content-box so ch maths holds */
+.pl-page,
+.pl-page * {
+  box-sizing: content-box;
+}
+
+.pl-editor {
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-variant-ligatures: none;
+  caret-color: var(--accent);
+  min-height: 48em;
+}
+
+.pl-el {
+  position: relative;
+  margin-top: 0;
+  margin-bottom: 0;
+  line-height: 1;
+  min-height: 1em;
+}
+.pl-editor > .pl-el:first-child {
+  margin-top: 0;
+}
+.pl-el strong {
+  font-weight: 700;
+}
+
+/* Notes: shown to the writer, never printed. */
+.pl-el[data-kind='note'] {
+  font-family: var(--ui-font);
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--note-text);
+  background: var(--note-bg);
+  border-left: 3px solid var(--note-border);
+  padding: 0.4em 0.7em;
+  border-radius: 0 4px 4px 0;
+  width: auto !important;
+}
+.pl-el[data-kind='note'].is-empty::before {
+  color: var(--note-border) !important;
+}
+
+/* Automatic (CONT'D) after a character name. */
+.pl-contd {
+  color: var(--text-3);
+  user-select: none;
+}
+
+/* Scene numbers in both margins. */
+.pl-el[data-scene]::before,
+.pl-el[data-scene]::after {
+  content: attr(data-scene);
+  position: absolute;
+  top: 0;
+  color: var(--text-2);
+}
+.pl-el[data-scene]::before {
+  left: -6ch;
+}
+.pl-el[data-scene]::after {
+  left: 63ch;
+}
+
+/* Current element label in the left margin. */
+.pl-el-label {
+  position: absolute;
+  top: 0;
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+  text-indent: 0;
+  text-transform: none;
+  text-decoration: none;
+  font-weight: 400;
+}
+.pl-el-label > span {
+  font: 600 10px/1.6 var(--ui-font);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label);
+  white-space: nowrap;
+}
+
+/* Page break markers. */
+.pl-page-break {
+  position: absolute;
+  height: 0;
+  border-top: 1px dashed var(--page-break);
+  pointer-events: none;
+  user-select: none;
+  text-indent: 0;
+  text-transform: none;
+  text-decoration: none;
+  font-weight: 400;
+  text-align: left;
+}
+.pl-page-number {
+  position: absolute;
+  right: 1ch;
+  top: -0.6em;
+  padding: 0 0.6ch;
+  font: 11px/1.1 var(--ui-font);
+  color: var(--text-3);
+  background: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .pl-paper-wrap {
+    padding: 12px 8px 64px;
+    font-size: min(16px, calc((100cqw - 16px) / 54));
+  }
+  .pl-el-label {
+    display: none;
+  }
+}
