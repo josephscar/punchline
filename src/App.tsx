@@ -5,6 +5,7 @@ import { serializeFdx } from './core/io/fdx';
 import { serializeFountain } from './core/io/fountain';
 import type { ScriptLayout } from './core/layout/paginate';
 import { createSampleScript } from './core/sample';
+import { endOfActIndex, moveScene } from './core/scenes';
 import { createScript, displayTitle, serializeNative } from './core/script';
 import { rememberCharacters } from './core/suggestions';
 import { newId, plainText, type ElementKind, type Script, type ScriptElement, type ScriptSettings, type TitlePage } from './core/types';
@@ -332,6 +333,17 @@ export function App() {
       return { ...s, characterMemory };
     });
 
+  const moveSceneTo = (from: number, target: number | { actEnd: number }) => {
+    const elements = editorRef.current?.getElements();
+    if (!elements) return;
+    if (elements[from]?.kind !== 'scene_heading') return notify('The script changed — try that again.');
+    const to = typeof target === 'number' ? target : endOfActIndex(elements, target.actEnd);
+    const result = moveScene(elements, from, to);
+    if (!result) return;
+    editorRef.current?.replaceElements(result.elements);
+    editorRef.current?.goToElement(result.index);
+  };
+
   const setSettings = (settings: ScriptSettings) => update((s) => ({ ...s, settings }));
   const setTitlePage = (titlePage: TitlePage) => update((s) => ({ ...s, titlePage }));
   const changeTheme = (t: string) => {
@@ -482,6 +494,7 @@ export function App() {
               onRename={setRenaming}
               onForget={forget}
               onAddNote={() => editorRef.current?.insertElement('note')}
+              onMoveScene={moveSceneTo}
             />
           </>
         )}

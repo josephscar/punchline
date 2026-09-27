@@ -1,14 +1,16 @@
 import { baseKeymap, toggleMark } from 'prosemirror-commands';
 import { history, redo, undo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
+import { Slice } from 'prosemirror-model';
 import { EditorState, TextSelection, type Command } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from 'react';
 import type { ScriptFormat } from '../core/formats';
 import type { ScriptLayout } from '../core/layout/paginate';
-import type { ElementKind, ScriptElement, ScriptSettings } from '../core/types';
+import { parseFountain, serializeFountain } from '../core/io/fountain';
+import { emptyTitlePage, type ElementKind, type ScriptElement, type ScriptSettings } from '../core/types';
 import { currentElement, enterCommand, insertHardBreak, jumpTo, selectElement, setKind, tabCommand } from './commands';
-import { docToElements, elementsToDoc } from './convert';
+import { docToElements, elementsToDoc, nodeToElement } from './convert';
 import { formatCss } from './formatCss';
 import { autocompleteKey, autocompletePlugin } from './plugins/autocomplete';
 import { layoutKey, layoutPlugin, REFRESH_LAYOUT } from './plugins/layout';
@@ -56,6 +58,25 @@ interface Props {
 }
 
 const CHANGE_DELAY = 250;
+
+function textToSlice(text: string, plain: boolean): Slice {
+  const normalized = text.replace(/\r\n?/g, '\n');
+  if (plain || !normalized.includes('\n')) {
+    const lines = normalized.split('\n').map((line) => ({ kind: 'action' as const, runs: line ? [{ text: line }] : [] }));
+    return new Slice(elementsToDoc(lines).content, 1, 1);
+  }
+  const { elements } = parseFountain(normalized, { titlePage: false });
+  return new Slice(elementsToDoc(elements).content, 1, 1);
+}
+
+function sliceToText(slice: Slice, format: ScriptFormat): string {
+  const elements: ScriptElement[] = [];
+  slice.content.forEach((node) => {
+    if (node.type === schema.nodes.element) elements.push(nodeToElement(node));
+  });
+  if (elements.length < 2) return slice.content.textBetween(0, slice.content.size, '\n\n', '\n');
+  return serializeFountain({ titlePage: emptyTitlePage(), elements }, format).trim();
+}
 
 export type Shortcut = 'save' | 'print' | 'help';
 
@@ -140,6 +161,10 @@ export function ScriptEditor(props: Props) {
     const view = new EditorView(mountRef.current!, {
       state: createState(initialElements),
       attributes: { class: 'pl-editor', spellcheck: 'true', 'aria-label': 'Script', role: 'textbox', 'aria-multiline': 'true' },
+      // Pasted plain text is read as Fountain, so scripts from other apps keep their elements.
+      clipboardTextParser: (text, _$context, plain) => textToSlice(text, plain),
+      // Copied text is written as Fountain, which other screenwriting apps understand.
+      clipboardTextSerializer: (slice) => sliceToText(slice, live.current.format),
       dispatchTransaction(tr) {
         const state = view.state.apply(tr);
         view.updateState(state);

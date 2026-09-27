@@ -204,3 +204,37 @@ test('title page, renaming a character and the cheat sheet', async ({ page }) =>
   await page.keyboard.press('Control+/');
   await expect(page.getByRole('heading', { name: 'Cheat sheet' })).toBeVisible();
 });
+
+test('pasting a script from another app keeps its elements', async ({ page }) => {
+  await newBlankScript(page);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'EXT. ROOFTOP - NIGHT\n\nThey look at the stars.\n\nDANA\n(quietly)\nWe should go inside.\n\nCUT TO:');
+    document.querySelector('.pl-editor')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  expect(await elements(page)).toEqual([
+    'scene_heading: EXT. ROOFTOP - NIGHT',
+    'action: They look at the stars.',
+    'character: DANA',
+    'parenthetical: quietly',
+    'dialogue: We should go inside.',
+    'transition: CUT TO:',
+  ]);
+});
+
+test('scenes can be reordered by dragging them in the navigator', async ({ page }) => {
+  const rows = page.locator('.nav-list li');
+  await expect(rows).toHaveCount(3);
+  // Drag the ACT ONE parking-lot scene to the top of the cold open.
+  await rows.nth(2).dragTo(rows.nth(0));
+  await expect(page.locator('.nav-scene-heading')).toHaveText([
+    'EXT. HOLLOWAY PAPER CO. - PARKING LOT - MORNING',
+    'INT. HOLLOWAY PAPER CO. - BULLPEN - DAY',
+    'INT. HOLLOWAY PAPER CO. - BREAK ROOM - CONTINUOUS',
+  ]);
+  // Its action and dialogue travelled with it.
+  const els = await elements(page);
+  const at = els.indexOf('scene_heading: EXT. HOLLOWAY PAPER CO. - PARKING LOT - MORNING');
+  expect(els[at + 1]).toMatch(/^action: Dana sprints across the lot/);
+  expect(els[at - 1]).toBe('act_start: COLD OPEN');
+});

@@ -100,14 +100,19 @@ function parseTitlePage(lines: string[]): TitlePage {
   return tp;
 }
 
-export function parseFountain(source: string): ParsedScript {
-  let text = source.replace(/\r\n?/g, '\n').replace(/^﻿/, '');
+export function parseFountain(source: string, options: { titlePage?: boolean } = {}): ParsedScript {
+  let text = source.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '');
   text = text.replace(/\/\*[\s\S]*?\*\//g, ''); // boneyard
   let lines = text.split('\n');
 
   let titlePage = emptyTitlePage();
   const firstContent = lines.findIndex((l) => l.trim());
-  if (firstContent >= 0 && /^[A-Za-z][A-Za-z ]*:/.test(lines[firstContent]) && !looksLikeSceneHeading(lines[firstContent])) {
+  const hasTitlePage =
+    options.titlePage !== false &&
+    firstContent >= 0 &&
+    /^[A-Za-z][A-Za-z ]*:/.test(lines[firstContent]) &&
+    !looksLikeSceneHeading(lines[firstContent]);
+  if (hasTitlePage) {
     let end = firstContent;
     while (end < lines.length && lines[end].trim()) end++;
     titlePage = parseTitlePage(lines.slice(firstContent, end));

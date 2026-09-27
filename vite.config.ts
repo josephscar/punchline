@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',
     assetsInlineLimit: mode === 'single' ? 100_000_000 : 4096,
+    // React + ProseMirror make one ~500 kB chunk; jsPDF is split out and loaded on demand.
+    chunkSizeWarningLimit: 700,
   },
   test: {
     include: ['src/**/*.test.ts'],

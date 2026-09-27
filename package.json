@@ -2,7 +2,7 @@
   "name": "punchline",
   "private": true,
   "version": "1.0.0",
-  "description": "Punchline — a screenwriting app for single-camera sitcom scripts.",
+  "description": "Punchline \u2014 a screenwriting app for single-camera sitcom scripts.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,5 +39,8 @@
     "vite": "^8.3.1",
     "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^5.0.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

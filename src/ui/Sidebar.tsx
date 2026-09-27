@@ -19,11 +19,58 @@ interface Props {
   onRename: (name: string) => void;
   onForget: (name: string) => void;
   onAddNote: () => void;
+  /** Move the scene at `from` before element `target`, or to the end of the act at `actEnd`. */
+  onMoveScene: (from: number, target: number | { actEnd: number }) => void;
 }
 
-function SceneRow({ scene, page, current, onGo, numbered }: { scene: SceneInfo; page: number; current: boolean; onGo: () => void; numbered: boolean }) {
+interface DragProps {
+  dragging: number | null;
+  dropTarget: string | null;
+  setDragging: (index: number | null) => void;
+  setDropTarget: (key: string | null) => void;
+  onMove: (target: number | { actEnd: number }) => void;
+}
+
+function SceneRow({
+  scene,
+  page,
+  current,
+  onGo,
+  numbered,
+  drag,
+}: {
+  scene: SceneInfo;
+  page: number;
+  current: boolean;
+  onGo: () => void;
+  numbered: boolean;
+  drag: DragProps;
+}) {
+  const key = `scene-${scene.index}`;
   return (
-    <li>
+    <li
+      draggable
+      className={drag.dropTarget === key ? 'drop-before' : undefined}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', scene.heading);
+        drag.setDragging(scene.index);
+      }}
+      onDragEnd={() => {
+        drag.setDragging(null);
+        drag.setDropTarget(null);
+      }}
+      onDragOver={(e) => {
+        if (drag.dragging === null || drag.dragging === scene.index) return;
+        e.preventDefault();
+        drag.setDropTarget(key);
+      }}
+      onDragLeave={() => drag.setDropTarget(null)}
+      onDrop={(e) => {
+        e.preventDefault();
+        drag.onMove(scene.index);
+      }}
+    >
       <button className={`nav-scene${current ? ' is-current' : ''}`} onClick={onGo} aria-current={current ? 'true' : undefined}>
         <span className="nav-scene-num">{numbered ? scene.number : ''}</span>
         <span className="nav-scene-body">
@@ -42,6 +89,19 @@ function SceneRow({ scene, page, current, onGo, numbered }: { scene: SceneInfo; 
 export function Sidebar(props: Props) {
   const { tab, onTab, analysis, elementPages, cursorIndex, onGo } = props;
   const [cueCursor, setCueCursor] = useState<Record<string, number>>({});
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const drag: DragProps = {
+    dragging,
+    dropTarget,
+    setDragging,
+    setDropTarget,
+    onMove: (target) => {
+      if (dragging !== null) props.onMoveScene(dragging, target);
+      setDragging(null);
+      setDropTarget(null);
+    },
+  };
 
   const currentScene = useMemo(() => {
     let current = -1;
@@ -57,10 +117,11 @@ export function Sidebar(props: Props) {
       {analysis.looseScenes.length > 0 && (
         <ul className="nav-list">
           {analysis.looseScenes.map((s) => (
-            <SceneRow key={s.index} scene={s} page={elementPages[s.index] ?? 1} current={s.index === currentScene} onGo={() => onGo(s.index)} numbered={props.showSceneNumbers} />
+            <SceneRow key={s.index} scene={s} page={elementPages[s.index] ?? 1} current={s.index === currentScene} onGo={() => onGo(s.index)} numbered={props.showSceneNumbers} drag={drag} />
           ))}
         </ul>
       )}
+      {analysis.scenes.length > 1 && <p className="nav-hint">Drag scenes to reorder them.</p>}
       {analysis.acts.map((act) => (
         <section key={act.index} className="nav-act">
           <button className="nav-act-title" onClick={() => onGo(act.index)}>
@@ -70,11 +131,27 @@ export function Sidebar(props: Props) {
           {act.scenes.length ? (
             <ul className="nav-list">
               {act.scenes.map((s) => (
-                <SceneRow key={s.index} scene={s} page={elementPages[s.index] ?? 1} current={s.index === currentScene} onGo={() => onGo(s.index)} numbered={props.showSceneNumbers} />
+                <SceneRow key={s.index} scene={s} page={elementPages[s.index] ?? 1} current={s.index === currentScene} onGo={() => onGo(s.index)} numbered={props.showSceneNumbers} drag={drag} />
               ))}
             </ul>
           ) : (
             <p className="nav-empty">No scenes yet.</p>
+          )}
+          {dragging !== null && (
+            <div
+              className={`drop-zone${dropTarget === `act-${act.index}` ? ' is-over' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDropTarget(`act-${act.index}`);
+              }}
+              onDragLeave={() => setDropTarget(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                drag.onMove({ actEnd: act.index });
+              }}
+            >
+              Move to end of {act.name}
+            </div>
           )}
         </section>
       ))}
