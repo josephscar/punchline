@@ -11,7 +11,7 @@ Draft date: First Draft
 Contact:
     you@example.com
 
-[[Welcome to Punchline! This sample pilot shows single-cam sitcom format. Notes like this one are for you only — they never print. Press Ctrl/⌘ + / for the cheat sheet, or open Scripts to start your own.]]
+[[Welcome to Punchline! This sample pilot shows single-cam sitcom format. Notes like this one are for you only — they never print. Press Ctrl/⌘ + / for the cheat sheet, or open the Library to start your own.]]
 
 > **_COLD OPEN_** <
 

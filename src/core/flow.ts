@@ -3,9 +3,9 @@ import type { ScriptFormat } from './formats';
 import type { ElementKind } from './types';
 
 /**
- * Keyboard flow — what Enter and Tab do in each element, the way Final
- * Draft and WriterDuet behave. Kept free of editor code so it can be tested
- * and reused by other front-ends.
+ * Keyboard flow: what Enter does in each element (the way Final Draft and
+ * WriterDuet behave) and the Tab cycle of element types. Kept free of
+ * editor code so it can be tested and reused by other front-ends.
  */
 
 export type FlowAction =
@@ -14,10 +14,7 @@ export type FlowAction =
   /** Split at the cursor; the new element (after the cursor) gets `to`. */
   | { type: 'split'; to: ElementKind }
   /** Cursor at the very start: push the element down with an empty one of the same type. */
-  | { type: 'insertAbove' }
-  /** Split mid-dialogue and put an empty parenthetical in between. */
-  | { type: 'splitWith'; insert: ElementKind; rest: ElementKind }
-  | { type: 'none' };
+  | { type: 'insertAbove' };
 
 export function enterAction(format: ScriptFormat, kind: ElementKind, text: string, offset: number): FlowAction {
   if (!text.trim()) {
@@ -29,24 +26,17 @@ export function enterAction(format: ScriptFormat, kind: ElementKind, text: strin
   return { type: 'split', to: kind };
 }
 
-export function tabAction(
-  format: ScriptFormat,
-  kind: ElementKind,
-  text: string,
-  offset: number,
-  shift: boolean,
-): FlowAction {
-  if (!text.trim()) {
-    const to = (shift ? format.flow.shiftTab : format.flow.tab)[kind];
-    return to ? { type: 'convert', to } : { type: 'none' };
-  }
-  if (shift) return { type: 'none' };
-  if (offset >= text.trimEnd().length) {
-    const to = format.flow.tabAtEnd[kind];
-    return to ? { type: 'split', to } : { type: 'none' };
-  }
-  if (kind === 'dialogue' && offset > 0) return { type: 'splitWith', insert: 'parenthetical', rest: 'dialogue' };
-  return { type: 'none' };
+/**
+ * Tab / Shift+Tab: the element type after (or before) `kind` in the
+ * format's cycle, wrapping around. Works the same whether or not the element
+ * has text, so Tab is always "change what this line is".
+ */
+export function nextInCycle(format: ScriptFormat, kind: ElementKind, backwards = false): ElementKind {
+  const cycle = format.flow.tabCycle;
+  const at = cycle.indexOf(kind);
+  if (at === -1) return cycle[0];
+  const step = backwards ? -1 : 1;
+  return cycle[(at + step + cycle.length) % cycle.length];
 }
 
 const ACT_NAME = /^(COLD OPEN|TEASER|PROLOGUE|EPILOGUE|TAG|ACT (ONE|TWO|THREE|FOUR|FIVE|SIX|\d+))$/;

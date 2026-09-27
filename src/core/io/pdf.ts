@@ -45,7 +45,14 @@ function styleName(run: TextRun): string {
   return 'normal';
 }
 
-export function renderScriptPdf(script: Script, format: ScriptFormat, fonts?: PdfFonts): jsPDF {
+export interface PdfOptions {
+  fonts?: PdfFonts;
+  /** Elements to mark with a revision asterisk in the right margin. */
+  revised?: Set<number>;
+}
+
+export function renderScriptPdf(script: Script, format: ScriptFormat, options: PdfOptions = {}): jsPDF {
+  const { fonts } = options;
   const { page } = format;
   const doc = new jsPDF({ unit: 'pt', format: [page.widthIn * PT_PER_IN, page.heightIn * PT_PER_IN] });
   const family = registerFonts(doc, fonts);
@@ -125,7 +132,7 @@ export function renderScriptPdf(script: Script, format: ScriptFormat, fonts?: Pd
     draft.forEach((d, i) => doc.text(d, right - d.length * CHAR_PT, bottom - (draft.length - 1 - i) * LINE_PT));
   }
 
-  const layout = layoutScript(script, format);
+  const layout = layoutScript(script, format, { revised: options.revised });
   for (const p of layout.pages) {
     if (!firstPage) doc.addPage();
     firstPage = false;
@@ -140,6 +147,10 @@ export function renderScriptPdf(script: Script, format: ScriptFormat, fonts?: Pd
   function drawLine(line: LayoutLine) {
     const baseline = top + line.y * LINE_PT + BASELINE_PT;
     drawText(line.runs, left + line.x * CHAR_PT, baseline);
+    if (line.revised) {
+      doc.setFont(family, 'bold');
+      doc.text('*', right + 6 * CHAR_PT, baseline);
+    }
     if (line.sceneNumber) {
       doc.setFont(family, 'normal');
       const n = String(line.sceneNumber);

@@ -8,11 +8,11 @@ import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from 'react
 import type { ScriptFormat } from '../core/formats';
 import type { ScriptLayout } from '../core/layout/paginate';
 import { parseFountain, serializeFountain } from '../core/io/fountain';
-import { emptyTitlePage, type ElementKind, type ScriptElement, type ScriptSettings } from '../core/types';
+import { ELEMENT_KINDS, emptyTitlePage, type ElementKind, type ScriptElement, type ScriptSettings } from '../core/types';
 import { currentElement, enterCommand, insertHardBreak, jumpTo, selectElement, setKind, tabCommand } from './commands';
 import { docToElements, elementsToDoc, nodeToElement } from './convert';
 import { formatCss } from './formatCss';
-import { autocompleteKey, autocompletePlugin, closeSuggestions } from './plugins/autocomplete';
+import { autocompletePlugin, closeSuggestions } from './plugins/autocomplete';
 import { layoutKey, layoutPlugin, REFRESH_LAYOUT } from './plugins/layout';
 import { smartTypePlugin } from './plugins/smartType';
 import { schema } from './schema';
@@ -23,8 +23,6 @@ export interface CursorInfo {
   page: number;
   /** The current element has no text. */
   empty: boolean;
-  /** The autocomplete list is showing (Tab accepts). */
-  suggesting: boolean;
 }
 
 export interface ScriptEditorHandle {
@@ -47,6 +45,8 @@ interface Props {
   initialElements: ScriptElement[];
   format: ScriptFormat;
   settings: ScriptSettings;
+  /** Draft pages to mark changes against (revision marks), or null. */
+  baseline: ScriptElement[] | null;
   memory: Record<string, number>;
   /** Called (debounced) with the document and the `docKey` it belongs to. */
   onChange: (elements: ScriptElement[], docKey: string) => void;
@@ -81,12 +81,12 @@ function sliceToText(slice: Slice, format: ScriptFormat): string {
 export type Shortcut = 'save' | 'print' | 'help';
 
 export function ScriptEditor(props: Props) {
-  const { docKey, initialElements, format, settings, memory, ref } = props;
+  const { docKey, initialElements, format, settings, baseline, memory, ref } = props;
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Plugins read live values through refs so they never need rebuilding.
-  const live = useRef({ format, settings, memory, props });
-  live.current = { format, settings, memory, props };
+  const live = useRef({ format, settings, baseline, memory, props });
+  live.current = { format, settings, baseline, memory, props };
 
   const css = useMemo(() => formatCss(format), [format]);
   const loadedKey = useRef(docKey);
@@ -99,7 +99,8 @@ export function ScriptEditor(props: Props) {
       return true;
     };
     const kindKeys: Record<string, Command> = {};
-    for (const kind of live.current.format.elementOrder) {
+    // Every element keeps its key in every format, so switching formats never rebinds keys.
+    for (const kind of ELEMENT_KINDS) {
       const key = live.current.format.elements[kind].shortcut;
       kindKeys[`Mod-${key}`] = setKind(kind);
       kindKeys[`Alt-${key}`] = setKind(kind);
@@ -131,7 +132,7 @@ export function ScriptEditor(props: Props) {
           ...kindKeys,
         }),
         keymap(baseKeymap),
-        layoutPlugin({ getFormat, getSettings: () => live.current.settings }),
+        layoutPlugin({ getFormat, getSettings: () => live.current.settings, getBaseline: () => live.current.baseline }),
       ],
     });
   };
@@ -148,7 +149,6 @@ export function ScriptEditor(props: Props) {
         index: el.index,
         page: layout?.elementPages[el.index] ?? 1,
         empty: !el.text.trim(),
-        suggesting: (autocompleteKey.getState(state)?.items.length ?? 0) > 0,
       });
     };
     const reportLayout = (state: EditorState) => {
@@ -177,7 +177,7 @@ export function ScriptEditor(props: Props) {
         }
         if (tr.docChanged || tr.getMeta(layoutKey)) reportLayout(view.state);
         // Layout refreshes also follow loading another script, so report the cursor then too.
-        if (tr.docChanged || tr.selectionSet || tr.getMeta(autocompleteKey) || tr.getMeta(layoutKey)) reportCursor(view.state);
+        if (tr.docChanged || tr.selectionSet || tr.getMeta(layoutKey)) reportCursor(view.state);
       },
     });
     viewRef.current = view;
@@ -204,11 +204,11 @@ export function ScriptEditor(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey]);
 
-  // Re-run layout when settings or format change.
+  // Re-run layout when settings, format or the revision baseline change.
   useEffect(() => {
     const view = viewRef.current;
     if (view) view.dispatch(view.state.tr.setMeta(layoutKey, REFRESH_LAYOUT));
-  }, [settings, format]);
+  }, [settings, format, baseline]);
 
   useImperativeHandle(
     ref,

@@ -207,23 +207,24 @@ function listSuggestions(options: string[], before: string): Suggestion[] {
     .map((o) => ({ label: o, insert: o, from: 0 }));
 }
 
+/** The act that most likely comes next: the one after the last act so far in the format's sequence. */
 function nextActName(ctx: SuggestionContext): string[] {
-  const { actNames } = ctx.format.vocabulary;
+  const { actSequence, actNames } = ctx.format.vocabulary;
   const used = ctx.elements
     .slice(0, ctx.index)
     .filter((el) => el.kind === 'act_start')
     .map((el) => plainText(el).trim().toUpperCase());
   const last = used[used.length - 1];
-  const at = last ? actNames.indexOf(last) : -1;
-  const next = actNames.slice(at + 1).filter((n) => !used.includes(n) && n !== 'TEASER');
-  return uniq([...next, ...actNames], (n) => n);
+  const at = last ? actSequence.indexOf(last) : -1;
+  const next = actSequence.slice(at + 1).filter((n) => !used.includes(n));
+  return uniq([...next, ...actSequence, ...actNames], (n) => n);
 }
 
 function actEndNames(ctx: SuggestionContext): string[] {
   const act = currentActName(ctx.elements, ctx.index);
-  const { actNames, endOfShow } = ctx.format.vocabulary;
+  const { actSequence, actNames, endOfShow } = ctx.format.vocabulary;
   const options = act ? [`END OF ${act}`] : [];
-  options.push(endOfShow, 'END OF EPISODE', ...actNames.map((n) => `END OF ${n}`));
+  options.push(endOfShow, ...[...actSequence, ...actNames].map((n) => `END OF ${n}`));
   return uniq(options, (o) => o);
 }
 

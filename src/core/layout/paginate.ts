@@ -29,6 +29,8 @@ export interface LayoutLine {
   lineInElement: number;
   /** Set on the first line of a numbered scene heading. */
   sceneNumber?: number;
+  /** The line belongs to an element changed since the revision baseline. */
+  revised?: boolean;
 }
 
 export interface LayoutPage {
@@ -152,7 +154,16 @@ interface Unit {
   characterText?: string;
 }
 
-export function layoutScript(script: Pick<Script, 'elements' | 'settings'>, format: ScriptFormat): ScriptLayout {
+export interface LayoutOptions {
+  /** Element indices to flag with revision marks. */
+  revised?: Set<number>;
+}
+
+export function layoutScript(
+  script: Pick<Script, 'elements' | 'settings'>,
+  format: ScriptFormat,
+  options: LayoutOptions = {},
+): ScriptLayout {
   const { elements, settings } = script;
   const L = format.page.linesPerPage;
   const contdCues = settings.autoContd ? autoContdCues(elements) : new Set<number>();
@@ -209,6 +220,7 @@ export function layoutScript(script: Pick<Script, 'elements' | 'settings'>, form
         lineInElement: l.lineInElement,
       };
       if (l.sceneNumber) out.sceneNumber = l.sceneNumber;
+      if (l.elementIndex >= 0 && options.revised?.has(l.elementIndex)) out.revised = true;
       current().lines.push(out);
       y++;
     }

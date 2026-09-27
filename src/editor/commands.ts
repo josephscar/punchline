@@ -1,5 +1,5 @@
 import { NodeSelection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
-import { detectOnEnter, enterAction, tabAction, type FlowAction } from '../core/flow';
+import { detectOnEnter, enterAction, nextInCycle, type FlowAction } from '../core/flow';
 import type { ScriptFormat } from '../core/formats';
 import type { ElementKind } from '../core/types';
 import { schema } from './schema';
@@ -57,15 +57,6 @@ function applyFlow(tr: Transaction, action: FlowAction, start: number, cursor: n
       tr.insert(start, schema.nodes.element.create({ kind: node.attrs.kind }));
       return true;
     }
-    case 'splitWith': {
-      tr.split(cursor, 1, [elementType(action.rest)]);
-      // After the split the first element closes at `cursor`; slot the new one in between.
-      tr.insert(cursor + 1, schema.nodes.element.create({ kind: action.insert }));
-      tr.setSelection(TextSelection.create(tr.doc, cursor + 2));
-      return true;
-    }
-    case 'none':
-      return false;
   }
 }
 
@@ -117,16 +108,16 @@ function finish(
   return true;
 }
 
-/** Tab / Shift+Tab: cycle an empty element, or add the natural next element. */
+/**
+ * Tab / Shift+Tab: change the element (or every selected element) to the
+ * next or previous type in the format's cycle — Action → Character →
+ * Parenthetical → Dialogue → Transition → … — whether or not it has text.
+ */
 export function tabCommand(format: ScriptFormat, shift: boolean): Command {
   return (state, dispatch) => {
     const el = currentElement(state);
-    const action = tabAction(format, el.kind, el.text, el.offset, shift);
-    const tr = state.tr;
-    applyFlow(tr, action, el.start, state.selection.from);
     // Always swallow Tab so focus never leaves the page.
-    if (dispatch && tr.docChanged) dispatch(tr.scrollIntoView());
-    return true;
+    return setKind(nextInCycle(format, el.kind, shift))(state, dispatch);
   };
 }
 

@@ -10,9 +10,9 @@ import { docToElements } from '../convert';
  * SmartType-style autocomplete popup for character names, scene headings,
  * transitions, acts and parentheticals.
  *
- * Keys: ↑/↓ choose · Tab accepts and stays put · Enter accepts and moves on
- * to the next element, but only once you've typed or chosen something (so
- * Enter on an empty Character line still moves on to Action) · Esc closes.
+ * Nothing is ever picked for you: click a suggestion, or highlight one with
+ * ↑/↓ and press Enter (which also moves on to the next element). Without a
+ * highlighted suggestion Enter and Tab behave as usual. Esc closes the list.
  */
 
 export interface AutocompleteOptions {
@@ -23,9 +23,8 @@ export interface AutocompleteOptions {
 
 interface AcState {
   items: Suggestion[];
+  /** Highlighted suggestion, or -1 when none is (the list only suggests). */
   selected: number;
-  /** Enter accepts only when armed (the writer typed or used the arrows). */
-  armed: boolean;
   /** Suppressed for this element text (after Esc or accepting). */
   suppressed: string | null;
   /** Element the list belongs to (its start position). */
@@ -89,21 +88,21 @@ export function autocompletePlugin(options: AutocompleteOptions): Plugin<AcState
   return new Plugin<AcState>({
     key: autocompleteKey,
     state: {
-      init: () => ({ items: [], selected: 0, armed: false, suppressed: null, element: -1 }),
+      init: () => ({ items: [], selected: -1, suppressed: null, element: -1 }),
       apply(tr, prev, _old, state) {
         const meta = tr.getMeta(autocompleteKey) as Meta | undefined;
         if (meta?.type === 'move') {
           const n = prev.items.length;
           if (!n) return prev;
-          const selected = prev.armed ? (prev.selected + meta.delta + n) % n : meta.delta > 0 ? 0 : n - 1;
-          return { ...prev, selected, armed: true };
+          const selected = prev.selected < 0 ? (meta.delta > 0 ? 0 : n - 1) : (prev.selected + meta.delta + n) % n;
+          return { ...prev, selected };
         }
         let suppressed = prev.suppressed;
         if (meta?.type === 'suppress') suppressed = meta.key;
         const key = contextKey(state);
         if (suppressed !== null && suppressed !== key && meta?.type !== 'suppress') suppressed = null;
         const el = currentElement(state);
-        const closed: AcState = { items: [], selected: 0, armed: false, suppressed, element: el.start };
+        const closed: AcState = { items: [], selected: -1, suppressed, element: el.start };
         if (meta?.type === 'suppress' || suppressed === key) return closed;
         if (!tr.docChanged) {
           if (!tr.selectionSet) return prev;
@@ -111,10 +110,7 @@ export function autocompletePlugin(options: AutocompleteOptions): Plugin<AcState
           // it only updates a list that is already open in the same element.
           if (!prev.items.length || prev.element !== el.start) return closed;
         }
-        const items = compute(state, options);
-        // Armed once something has been typed in the part being completed.
-        const typed = items.length > 0 && el.text.slice(items[0].from, el.offset).trim().length > 0;
-        return { items, selected: 0, armed: typed, suppressed, element: el.start };
+        return { items: compute(state, options), selected: -1, suppressed, element: el.start };
       },
     },
     props: {
@@ -130,12 +126,8 @@ export function autocompletePlugin(options: AutocompleteOptions): Plugin<AcState
             return move(1);
           case 'ArrowUp':
             return move(-1);
-          case 'Tab':
-            if (event.shiftKey) return false;
-            acceptSuggestion(view, ac.items[ac.selected] ?? ac.items[0]);
-            return true;
           case 'Enter':
-            if (!ac.armed || event.shiftKey) return false;
+            if (ac.selected < 0 || event.shiftKey) return false;
             acceptSuggestion(view, ac.items[ac.selected], options.getFormat());
             return true;
           case 'Escape':
@@ -194,7 +186,7 @@ class SuggestionPopup {
       ...ac.items.map((item, i) => {
         const li = document.createElement('li');
         li.className = 'ac-item';
-        if (i === ac.selected) li.classList.add(ac.armed ? 'is-active' : 'is-default');
+        if (i === ac.selected) li.classList.add('is-active');
         li.setAttribute('role', 'option');
         li.setAttribute('aria-selected', String(i === ac.selected));
         const label = document.createElement('span');
@@ -215,7 +207,7 @@ class SuggestionPopup {
         return li;
       }),
     );
-    this.hint.textContent = ac.armed ? '↵ accept & continue · Tab accept · Esc close' : 'Tab to accept · ↓ to choose · or keep typing';
+    this.hint.textContent = ac.selected >= 0 ? '↵ use this · Esc to close' : 'Click to use · or ↓ then ↵ · Esc to close';
     this.dom.hidden = false;
     const coords = this.view.coordsAtPos(this.view.state.selection.from);
     const rect = this.dom.getBoundingClientRect();

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { ScriptAnalysis, SceneInfo } from '../core/analysis';
 import { icons } from './icons';
 
-export type SidebarTab = 'scenes' | 'characters' | 'notes';
+export type SidebarTab = 'scenes' | 'characters' | 'notes' | 'drafts';
 
 interface Props {
   tab: SidebarTab;
@@ -12,8 +12,13 @@ interface Props {
   cursorIndex: number;
   /** Names this script remembers but no longer uses. */
   rememberedHere: string[];
-  /** Names used in the writer's other scripts. */
+  /** Names used in the writer's other scripts (in the same project). */
   rememberedElsewhere: string[];
+  /** Heading for `rememberedElsewhere`. */
+  elsewhereLabel: string;
+  /** The Drafts tab's content and how many drafts there are. */
+  drafts: ReactNode;
+  draftCount: number;
   showSceneNumbers: boolean;
   onGo: (index: number) => void;
   onRename: (name: string) => void;
@@ -217,8 +222,8 @@ export function Sidebar(props: Props) {
       )}
       {props.rememberedElsewhere.length > 0 && (
         <section className="remembered">
-          <h3>From your other scripts</h3>
-          <p className="nav-hint">Recurring cast — suggested here too.</p>
+          <h3>{props.elsewhereLabel}</h3>
+          <p className="nav-hint">Recurring cast, suggested here too.</p>
           <ul className="chips">
             {props.rememberedElsewhere.map((n) => (
               <li key={n} className="chip">
@@ -256,6 +261,7 @@ export function Sidebar(props: Props) {
     { id: 'scenes', label: 'Scenes', count: analysis.scenes.length },
     { id: 'characters', label: 'Characters', count: analysis.characters.length },
     { id: 'notes', label: 'Notes', count: analysis.notes.length },
+    { id: 'drafts', label: 'Drafts', count: props.draftCount },
   ];
 
   return (
@@ -272,6 +278,7 @@ export function Sidebar(props: Props) {
         {tab === 'scenes' && scenesPanel}
         {tab === 'characters' && charactersPanel}
         {tab === 'notes' && notesPanel}
+        {tab === 'drafts' && props.drafts}
       </div>
     </aside>
   );

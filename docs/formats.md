@@ -1,15 +1,21 @@
-# Single-camera sitcom format
+# Script formats
 
-This is what Punchline's single-cam format produces and why. The numbers live in [`src/core/formats/singleCamSitcom.ts`](../src/core/formats/singleCamSitcom.ts).
+This is what Punchline's formats produce and why. The numbers live in [`src/core/formats/`](../src/core/formats/): `screenplay.ts` holds the page and elements the formats share, and each format file adds its structure, vocabulary and starting template.
+
+| Format | Structure | Typical length |
+|---|---|---|
+| Single-Cam Sitcom | COLD OPEN, ACT ONE, ACT TWO (sometimes THREE), TAG, END OF SHOW | 25–35 pages |
+| One-Hour Drama | TEASER, ACT ONE … ACT FIVE (network shows use four to six), END OF EPISODE | 50–65 pages |
+| Feature Screenplay | FADE IN: … FADE OUT., no act headings | 90–120 pages |
 
 ## The page
 
-Single-cam comedies such as *The Office*, *Parks and Recreation*, *30 Rock*, *Abbott Elementary* and *Hacks* are laid out like feature screenplays: mixed-case action, single-spaced dialogue, and no scene letters. That separates them from multi-cam shows, which use double-spaced dialogue, all-caps action and lettered scenes.
+All three formats use the screenplay page. Single-camera TV (*The Office*, *Parks and Recreation*, *Abbott Elementary*, *Grey's Anatomy*) is laid out like a feature screenplay: mixed-case action, single-spaced dialogue, and no scene letters. That separates it from multi-cam shows, which use double-spaced dialogue, all-caps action and lettered scenes (planned for a later version).
 
 - US Letter, 12pt Courier (Punchline uses Courier Prime): 10 characters per inch, 6 lines per inch
 - Margins: left 1.5″, right 1″, top and bottom 1″, which gives 54 lines per page
 - Page numbers top right (`2.`) from page 2; the title page is unnumbered
-- About one page per minute of screen time; a half-hour episode runs 25–35 pages
+- About one page per minute of screen time
 
 | Element | Starts at | Width | Style | Blank lines above |
 |---|---|---|---|---|
@@ -24,7 +30,7 @@ Single-cam comedies such as *The Office*, *Parks and Recreation*, *30 Rock*, *Ab
 | End of Act | centered | | CAPS, **bold**, <u>underlined</u> | 1 |
 | Note | never printed | | | |
 
-## Structure
+## Single-cam sitcom structure
 
 ```
 COLD OPEN            (or TEASER)
@@ -44,7 +50,15 @@ TAG
 END OF SHOW
 ```
 
-A new single-cam script in Punchline starts with this skeleton. When you add a New Act, the autocomplete offers the act that comes next. End of Act offers "END OF" plus the current act, or END OF SHOW.
+A new single-cam script in Punchline starts with this skeleton. When you add a New Act, the suggestions offer the act that comes next. End of Act offers "END OF" plus the current act, or END OF SHOW.
+
+## One-hour drama structure
+
+A new drama starts with a TEASER and ACT ONE to ACT FIVE, each on a new page, each closed by END OF … and the last by END OF EPISODE. Streaming dramas often drop act breaks; delete them, or start from a blank page.
+
+## Feature structure
+
+A feature has no act headings. It opens with `FADE IN:` at the left margin (as Action) and ends with `FADE OUT.` flush right (a Transition). The New Act and End of Act elements are left out of the menu and the Tab cycle for features; any already in the script still print.
 
 ## Elements
 
@@ -56,6 +70,10 @@ A new single-cam script in Punchline starts with this skeleton. When you add a N
 - **Transition:** `CUT TO:`, `SMASH CUT TO:` (the classic comedy button), `MATCH CUT TO:`. Use them sparingly.
 - **Shot:** a secondary slugline inside a scene, such as `ANGLE ON`, `CLOSE ON`, `BACK TO SCENE` or `INSERT`.
 - **Note:** a note to yourself. It is highlighted in the editor, listed in the Notes tab, and exported to Fountain as `[[note]]`. It is never printed.
+
+## Drafts and revision marks
+
+A draft is a frozen copy of a script's pages. Drafts can carry one of the production revision colours studios print changed pages on, in order: White, Blue, Pink, Yellow, Green, Goldenrod, Buff, Salmon, Cherry, Tan. With **Revision marks** set to a draft, every line added or changed since that draft gets an asterisk (`*`) in the right margin, 0.6″ past the text column, both in the editor and in the PDF. Notes are never marked because they never print.
 
 ## Page-break rules
 
@@ -74,4 +92,4 @@ The paginator (`src/core/layout/paginate.ts`) follows the conventions of profess
 | Fountain (`.fountain`) | ✓ | ✓ | Acts become `> **_ACT ONE_** <` after a `===` page break. Notes become `[[…]]`. Bold, italic and underline are kept. |
 | Final Draft (`.fdx`) | ✓ | ✓ | Uses Final Draft's TV element names, New Act and End of Act. Notes are not written, because Final Draft attaches notes to ranges of text. |
 | PDF | | ✓ | Print-ready, with Courier Prime embedded and an optional title page. |
-| Punchline (`.punchline`) | ✓ | ✓ | Full backup, including settings and remembered characters. |
+| Punchline (`.punchline`) | ✓ | ✓ | A script with all its drafts, settings and remembered characters, or a whole project. Imports always create copies. |

@@ -5,8 +5,8 @@ import regularUrl from '../assets/fonts/CourierPrime-Regular.ttf?url';
 import { parseFdx } from '../core/io/fdx';
 import { parseFountain } from '../core/io/fountain';
 import type { PdfFonts } from '../core/io/pdf';
-import { parseNative, scriptFromParsed } from '../core/script';
-import { newId, type Script } from '../core/types';
+import { parseBackup, withFreshIds, type Backup } from '../core/backup';
+import { scriptFromParsed } from '../core/script';
 
 export const IMPORT_ACCEPT = '.fountain,.spmd,.txt,.fdx,.punchline,.json';
 
@@ -47,23 +47,23 @@ export function pickFile(accept: string): Promise<File | null> {
   });
 }
 
-/** Read a Fountain, Final Draft or Punchline file into a new script. */
-export async function importScriptFile(file: File): Promise<Script> {
+/**
+ * Read a Fountain, Final Draft or Punchline file. Everything imported gets
+ * fresh ids, so importing never overwrites scripts already in the library.
+ * Fountain and Final Draft files become a script in `projectId`; a
+ * Punchline project backup becomes a new project.
+ */
+export async function importFile(file: File, projectId: string | null, formatId?: string): Promise<Backup> {
   const text = await file.text();
   const name = file.name.toLowerCase();
-  let script: Script;
-  if (name.endsWith('.fdx') || text.trimStart().startsWith('<?xml')) {
-    script = scriptFromParsed(parseFdx(text));
-  } else if (name.endsWith('.punchline') || name.endsWith('.json') || text.trimStart().startsWith('{')) {
-    script = parseNative(text);
-    // Imported copies get a fresh identity so they never overwrite the original.
-    script.id = newId();
-  } else {
-    script = scriptFromParsed(parseFountain(text));
+  const fallbackTitle = file.name.replace(/\.[^.]+$/, '');
+  if (name.endsWith('.punchline') || name.endsWith('.json') || text.trimStart().startsWith('{')) {
+    return withFreshIds(parseBackup(text), projectId);
   }
-  if (!script.titlePage.title) script.titlePage.title = file.name.replace(/\.[^.]+$/, '');
-  script.updatedAt = Date.now();
-  return script;
+  const parsed = name.endsWith('.fdx') || text.trimStart().startsWith('<?xml') ? parseFdx(text) : parseFountain(text);
+  const script = scriptFromParsed(parsed, formatId, projectId);
+  if (!script.titlePage.title) script.titlePage.title = fallbackTitle;
+  return { kind: 'script', script, drafts: [] };
 }
 
 function toBase64(buffer: ArrayBuffer): string {

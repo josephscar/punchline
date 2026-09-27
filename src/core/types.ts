@@ -64,12 +64,16 @@ export interface ScriptSettings {
   autoContd: boolean;
   /** Print a title page. */
   includeTitlePage: boolean;
+  /** Draft to compare against: lines changed since it get a revision mark (*). */
+  revisionBaseline: string | null;
 }
 
 export interface Script {
   /** File-format version of this object — bump when the shape changes. */
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
+  /** Project (series or film) the script belongs to; null for unfiled scripts. */
+  projectId: string | null;
   /** Script format id, e.g. "single-cam-sitcom". */
   formatId: string;
   titlePage: TitlePage;
@@ -85,6 +89,46 @@ export interface Script {
   updatedAt: number;
 }
 
+/** A series, a film, or any other group of scripts. */
+export interface Project {
+  id: string;
+  title: string;
+  /** Format new scripts in this project start with. */
+  formatId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Production revision colours, in the order studios use them. */
+export const REVISION_COLORS = [
+  'White',
+  'Blue',
+  'Pink',
+  'Yellow',
+  'Green',
+  'Goldenrod',
+  'Buff',
+  'Salmon',
+  'Cherry',
+  'Tan',
+] as const;
+export type RevisionColor = (typeof REVISION_COLORS)[number];
+
+/**
+ * A saved iteration of a script: a frozen copy of its pages that the
+ * working script can be compared with, restored from, or branched from.
+ */
+export interface Draft {
+  id: string;
+  scriptId: string;
+  name: string;
+  color: RevisionColor | null;
+  note: string;
+  createdAt: number;
+  titlePage: TitlePage;
+  elements: ScriptElement[];
+}
+
 export function plainText(el: { runs: TextRun[] }): string {
   return el.runs.map((r) => r.text).join('');
 }
@@ -98,7 +142,7 @@ export function emptyTitlePage(): TitlePage {
 }
 
 export function defaultSettings(): ScriptSettings {
-  return { sceneNumbers: false, autoContd: true, includeTitlePage: true };
+  return { sceneNumbers: false, autoContd: true, includeTitlePage: true, revisionBaseline: null };
 }
 
 /** Collapse adjacent runs with identical styling and drop empty runs. */

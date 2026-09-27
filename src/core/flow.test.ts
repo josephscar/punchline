@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { detectOnEnter, detectWhileTyping, enterAction, tabAction } from './flow';
+import { detectOnEnter, detectWhileTyping, enterAction, nextInCycle } from './flow';
+import { featureScreenplay } from './formats/featureScreenplay';
 import { singleCamSitcom as format } from './formats/singleCamSitcom';
 
 describe('Enter', () => {
@@ -27,19 +28,23 @@ describe('Enter', () => {
 });
 
 describe('Tab', () => {
-  it('cycles empty elements', () => {
-    expect(tabAction(format, 'action', '', 0, false)).toEqual({ type: 'convert', to: 'character' });
-    expect(tabAction(format, 'character', '', 0, false)).toEqual({ type: 'convert', to: 'transition' });
-    expect(tabAction(format, 'transition', '', 0, false)).toEqual({ type: 'convert', to: 'scene_heading' });
-    expect(tabAction(format, 'dialogue', '', 0, false)).toEqual({ type: 'convert', to: 'parenthetical' });
-    expect(tabAction(format, 'character', '', 0, true)).toEqual({ type: 'convert', to: 'action' });
+  it('cycles through the element types in menu order, text or not', () => {
+    expect(nextInCycle(format, 'scene_heading')).toBe('action');
+    expect(nextInCycle(format, 'action')).toBe('character');
+    expect(nextInCycle(format, 'character')).toBe('parenthetical');
+    expect(nextInCycle(format, 'parenthetical')).toBe('dialogue');
+    expect(nextInCycle(format, 'dialogue')).toBe('transition');
+    expect(nextInCycle(format, 'note')).toBe('scene_heading');
   });
 
-  it('adds a parenthetical after or inside dialogue', () => {
-    expect(tabAction(format, 'dialogue', 'Hi.', 3, false)).toEqual({ type: 'split', to: 'parenthetical' });
-    expect(tabAction(format, 'dialogue', 'Hi. Bye.', 4, false)).toEqual({ type: 'splitWith', insert: 'parenthetical', rest: 'dialogue' });
-    expect(tabAction(format, 'action', 'She waves.', 10, false)).toEqual({ type: 'split', to: 'character' });
-    expect(tabAction(format, 'action', 'She waves.', 3, false)).toEqual({ type: 'none' });
+  it('goes backwards with Shift', () => {
+    expect(nextInCycle(format, 'character', true)).toBe('action');
+    expect(nextInCycle(format, 'scene_heading', true)).toBe('note');
+  });
+
+  it('skips elements a format does not use', () => {
+    expect(nextInCycle(featureScreenplay, 'shot')).toBe('note');
+    expect(nextInCycle(featureScreenplay, 'act_start')).toBe('scene_heading');
   });
 });
 
@@ -54,6 +59,7 @@ describe('smart detection', () => {
     expect(detectOnEnter(format, 'character', 'END OF ACT ONE')).toBe('act_end');
     expect(detectOnEnter(format, 'character', 'TAG')).toBeNull();
     expect(detectOnEnter(format, 'action', 'FADE OUT.')).toBe('transition');
+    expect(detectOnEnter(format, 'action', 'FADE IN:')).toBeNull(); // stays at the left margin
     expect(detectOnEnter(format, 'action', 'ACT TWO')).toBe('act_start');
     expect(detectOnEnter(format, 'action', 'END OF ACT TWO')).toBe('act_end');
     expect(detectOnEnter(format, 'character', 'EXT. LOT - DAY')).toBe('scene_heading');

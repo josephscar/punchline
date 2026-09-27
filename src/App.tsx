@@ -1,20 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeScript, characterName } from './core/analysis';
+import { nextInCycle } from './core/flow';
 import { FORMATS, getFormat } from './core/formats';
 import { serializeFdx } from './core/io/fdx';
 import { serializeFountain } from './core/io/fountain';
 import type { ScriptLayout } from './core/layout/paginate';
 import { createSampleScript } from './core/sample';
 import { endOfActIndex, moveScene } from './core/scenes';
-import { createScript, displayTitle, serializeNative } from './core/script';
+import { serializeProjectBackup, serializeScriptBackup, type Backup } from './core/backup';
+import { revisedIndices } from './core/diff';
+import { createDraft, createProject, createScript, displayTitle, suggestDraftName } from './core/script';
 import { rememberCharacters } from './core/suggestions';
-import { newId, plainText, type ElementKind, type Script, type ScriptElement, type ScriptSettings, type TitlePage } from './core/types';
+import {
+  newId,
+  plainText,
+  type Draft,
+  type ElementKind,
+  type Project,
+  type RevisionColor,
+  type Script,
+  type ScriptElement,
+  type ScriptSettings,
+  type TitlePage,
+} from './core/types';
 import { ScriptEditor, type CursorInfo, type ScriptEditorHandle, type Shortcut } from './editor/ScriptEditor';
 import { openLibrary, type Library, type ScriptSummary } from './storage/library';
-import { LibraryDialog, RenameDialog, SettingsDialog, TitlePageDialog } from './ui/Dialogs';
-import { downloadBlob, downloadText, IMPORT_ACCEPT, importScriptFile, loadPdfFonts, pickFile, safeFilename } from './ui/files';
+import { CompareDialog, type Version } from './ui/CompareDialog';
+import { RenameDialog, SettingsDialog, TitlePageDialog } from './ui/Dialogs';
+import { DraftsPanel, formatDate } from './ui/DraftsPanel';
+import { downloadBlob, downloadText, IMPORT_ACCEPT, importFile, loadPdfFonts, pickFile, safeFilename } from './ui/files';
 import { ALT, HelpDialog, MOD } from './ui/HelpDialog';
 import { icons } from './ui/icons';
+import { LibraryDialog } from './ui/LibraryDialog';
 import { Sidebar, type SidebarTab } from './ui/Sidebar';
 
 type DialogName = 'library' | 'title' | 'settings' | 'help' | null;
@@ -39,9 +56,12 @@ export function App() {
   const [library, setLibrary] = useState<Library | null>(null);
   const [script, setScript] = useState<Script | null>(null);
   const [summaries, setSummaries] = useState<ScriptSummary[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [compare, setCompare] = useState<{ from: string; to: string; current: ScriptElement[] } | null>(null);
   const [otherMemory, setOtherMemory] = useState<Record<string, number>>({});
   const [layout, setLayout] = useState<ScriptLayout | null>(null);
-  const [cursor, setCursor] = useState<CursorInfo>({ kind: 'action', index: 0, page: 1, empty: true, suggesting: false });
+  const [cursor, setCursor] = useState<CursorInfo>({ kind: 'action', index: 0, page: 1, empty: true });
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [dialog, setDialog] = useState<DialogName>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -88,7 +108,9 @@ export function App() {
         setLibrary(lib);
         setScript(current);
         setSummaries(await lib.list());
-        setOtherMemory(await lib.memory(current.id));
+        setProjects(await lib.listProjects());
+        setDrafts(await lib.listDrafts(current.id));
+        setOtherMemory(await lib.memory({ projectId: current.projectId, excludeId: current.id }));
         await lib.setPref('lastScriptId', current.id);
       } catch (e) {
         setLoadError(e instanceof Error ? e.message : String(e));
@@ -159,7 +181,7 @@ export function App() {
 
   const handleCursor = useCallback((c: CursorInfo) => {
     setCursor((prev) =>
-      prev.kind === c.kind && prev.index === c.index && prev.page === c.page && prev.empty === c.empty && prev.suggesting === c.suggesting ? prev : c,
+      prev.kind === c.kind && prev.index === c.index && prev.page === c.page && prev.empty === c.empty ? prev : c,
     );
   }, []);
 
@@ -173,9 +195,11 @@ export function App() {
       setScript(next);
       setSaveState('saved');
       setDialog(null);
+      setCompare(null);
+      setDrafts(await library.listDrafts(next.id));
       await library.setPref('lastScriptId', next.id);
       setSummaries(await library.list());
-      setOtherMemory(await library.memory(next.id));
+      setOtherMemory(await library.memory({ projectId: next.projectId, excludeId: next.id }));
       window.setTimeout(() => editorRef.current?.focus(), 50);
     },
     [library, latest],
@@ -188,26 +212,153 @@ export function App() {
     if (next) await switchTo(next);
   };
 
-  const newScript = async (options: { formatId: string; blank: boolean }) => {
+  const newScript = async (options: { formatId: string; blank: boolean; projectId: string | null }) => {
     if (!library) return;
     const next = createScript(options);
+    // An episode or draft in a project starts with the project's title.
+    const inProject = projects.find((p) => p.id === options.projectId);
+    if (inProject) next.titlePage.title = inProject.title.toUpperCase();
     await library.save(next);
     await switchTo(next);
     setDialog('title');
   };
 
-  const importFile = async () => {
+  /** Save everything in an imported file and return the script to open. */
+  const storeBackup = async (backup: Backup): Promise<Script> => {
+    if (!library) throw new Error('Library not ready');
+    if (backup.kind === 'project') {
+      await library.saveProject(backup.project);
+      for (const s of backup.scripts) await library.save(s);
+      for (const d of backup.drafts) await library.saveDraft(d);
+      setProjects(await library.listProjects());
+      if (backup.scripts.length) return backup.scripts[0];
+      const empty = createScript({ formatId: backup.project.formatId, projectId: backup.project.id });
+      await library.save(empty);
+      return empty;
+    }
+    await library.save(backup.script);
+    for (const d of backup.drafts) await library.saveDraft(d);
+    return backup.script;
+  };
+
+  const importInto = async (projectId: string | null) => {
     if (!library) return;
     const file = await pickFile(IMPORT_ACCEPT);
     if (!file) return;
     try {
-      const next = await importScriptFile(file);
-      await library.save(next);
+      const formatId = projects.find((p) => p.id === projectId)?.formatId;
+      const backup = await importFile(file, projectId, formatId);
+      const next = await storeBackup(backup);
       await switchTo(next);
-      notify(`Imported “${displayTitle(next)}”`);
+      notify(backup.kind === 'project' ? `Imported the project “${backup.project.title}”` : `Imported “${displayTitle(next)}”`);
     } catch (e) {
       notify(`Couldn’t import ${file.name}: ${e instanceof Error ? e.message : 'unknown format'}`);
     }
+  };
+
+  const moveScript = async (id: string, projectId: string | null) => {
+    if (!library) return;
+    if (id === script?.id) {
+      const moved = { ...latest()!, projectId, updatedAt: Date.now() };
+      dirty.current = false;
+      setScript(moved);
+      await library.save(moved);
+      setOtherMemory(await library.memory({ projectId, excludeId: id }));
+    } else {
+      const other = await library.load(id);
+      if (other) await library.save({ ...other, projectId, updatedAt: Date.now() });
+    }
+    setSummaries(await library.list());
+  };
+
+  // ---- Projects. ----
+  const addProject = async (title: string, formatId: string) => {
+    const project = createProject(title, formatId);
+    await library!.saveProject(project);
+    setProjects(await library!.listProjects());
+    return project;
+  };
+
+  const renameProject = async (id: string, title: string) => {
+    const project = projects.find((p) => p.id === id);
+    if (!library || !project) return;
+    await library.saveProject({ ...project, title, updatedAt: Date.now() });
+    setProjects(await library.listProjects());
+  };
+
+  const deleteProject = async (id: string) => {
+    if (!library) return;
+    await library.removeProject(id);
+    setProjects(await library.listProjects());
+    setSummaries(await library.list());
+    if (script?.projectId === id) {
+      setScript((s) => (s ? { ...s, projectId: null } : s));
+      setOtherMemory(await library.memory({ projectId: null, excludeId: script.id }));
+    }
+  };
+
+  const exportProject = async (id: string) => {
+    if (__DEMO__) return notify(PREVIEW_EXPORT_MESSAGE);
+    const project = projects.find((p) => p.id === id);
+    if (!library || !project) return;
+    const members: Script[] = [];
+    const allDrafts: Draft[] = [];
+    for (const summary of summaries.filter((s) => s.projectId === id)) {
+      const member = summary.id === script?.id ? latest() : await library.load(summary.id);
+      if (!member) continue;
+      members.push(member);
+      allDrafts.push(...(await library.listDrafts(member.id)));
+    }
+    downloadText(`${safeFilename(project.title)}.punchline`, serializeProjectBackup(project, members, allDrafts), 'application/json');
+  };
+
+  // ---- Drafts. ----
+  const saveDraft = async (options: { name: string; color: RevisionColor | null; note: string }) => {
+    const current = latest();
+    if (!library || !current) return;
+    const draft = createDraft(current, options);
+    await library.saveDraft(draft);
+    setDrafts(await library.listDrafts(current.id));
+    setSummaries(await library.list());
+    notify(`Saved “${draft.name}”`);
+  };
+
+  const restoreDraft = async (id: string) => {
+    const current = latest();
+    const draft = drafts.find((d) => d.id === id);
+    if (!library || !current || !draft) return;
+    // Never lose the pages being replaced: keep them as a draft too.
+    await library.saveDraft(createDraft(current, { name: `Before restoring ${draft.name}`, note: 'Saved automatically' }));
+    update((s) => ({ ...s, titlePage: structuredClone(draft.titlePage) }));
+    editorRef.current?.replaceElements(structuredClone(draft.elements));
+    setDrafts(await library.listDrafts(current.id));
+    notify(`Restored “${draft.name}”. Your previous pages were saved as a draft.`);
+  };
+
+  const branchDraft = async (id: string) => {
+    const current = latest();
+    const draft = drafts.find((d) => d.id === id);
+    if (!library || !current || !draft) return;
+    const next = createScript({ formatId: current.formatId, projectId: current.projectId });
+    next.titlePage = structuredClone(draft.titlePage);
+    next.elements = structuredClone(draft.elements);
+    next.characterMemory = rememberCharacters(current.characterMemory, next.elements);
+    next.settings = { ...current.settings, revisionBaseline: null };
+    await library.save(next);
+    await switchTo(next);
+    notify(`Started a new script from “${draft.name}”`);
+  };
+
+  const deleteDraft = async (id: string) => {
+    if (!library || !script) return;
+    await library.removeDraft(id);
+    if (script.settings.revisionBaseline === id) update((s) => ({ ...s, settings: { ...s.settings, revisionBaseline: null } }));
+    setDrafts(await library.listDrafts(script.id));
+    setSummaries(await library.list());
+  };
+
+  const openCompare = (from: string, to: string) => {
+    setCompare({ from, to, current: latest()?.elements ?? [] });
   };
 
   const duplicate = async (id: string) => {
@@ -233,8 +384,9 @@ export function App() {
     setSummaries(list);
     if (id === script?.id) {
       dirty.current = false;
-      const next = list.length ? await library.load(list[0].id) : undefined;
-      const fallback = next ?? createScript();
+      const sameProject = list.find((s) => s.projectId === script.projectId) ?? list[0];
+      const next = sameProject ? await library.load(sameProject.id) : undefined;
+      const fallback = next ?? createScript({ projectId: script.projectId, formatId: script.formatId });
       if (!next) await library.save(fallback);
       await switchTo(fallback);
       setDialog('library');
@@ -249,7 +401,8 @@ export function App() {
     if (!s) return null;
     // jsPDF is large, so it loads the first time a PDF is made.
     const [{ renderScriptPdf }, fonts] = await Promise.all([import('./core/io/pdf'), loadPdfFonts()]);
-    return renderScriptPdf(s, format, fonts).output('blob');
+    const revised = baseline ? revisedIndices(baseline, s.elements) : undefined;
+    return renderScriptPdf(s, format, { fonts, revised }).output('blob');
   };
 
   const exportAs = async (kind: 'pdf' | 'fountain' | 'fdx' | 'native') => {
@@ -264,7 +417,7 @@ export function App() {
       }
       if (kind === 'fountain') downloadText(`${baseName()}.fountain`, serializeFountain(s, format));
       if (kind === 'fdx') downloadText(`${baseName()}.fdx`, serializeFdx(s, format), 'application/xml');
-      if (kind === 'native') downloadText(`${baseName()}.punchline`, serializeNative(s), 'application/json');
+      if (kind === 'native') downloadText(`${baseName()}.punchline`, serializeScriptBackup(s, drafts), 'application/json');
     } catch (e) {
       notify(`Export failed: ${e instanceof Error ? e.message : e}`);
     }
@@ -292,6 +445,21 @@ export function App() {
     if (name === 'print') void previewPdf();
     if (name === 'help') setDialog('help');
   };
+
+  const project = projects.find((p) => p.id === script?.projectId) ?? null;
+  const baselineDraft = drafts.find((d) => d.id === script?.settings.revisionBaseline) ?? null;
+  const baseline = baselineDraft?.elements ?? null;
+  const draftSuggestion = useMemo(() => suggestDraftName(drafts), [drafts]);
+  const versions: Version[] = useMemo(
+    () =>
+      compare
+        ? [
+            { id: 'current', label: 'Current pages (now)', elements: compare.current },
+            ...drafts.map((d) => ({ id: d.id, label: `${d.name} · ${formatDate(d.createdAt)}`, elements: d.elements })),
+          ]
+        : [],
+    [compare, drafts],
+  );
 
   // ---- Characters. ----
   const analysis = useMemo(() => analyzeScript(script?.elements ?? []), [script?.elements]);
@@ -392,7 +560,7 @@ export function App() {
 
   const label = (k: ElementKind) => format.elements[k].label;
   const enterTarget = cursor.empty ? (format.flow.emptyEnter[cursor.kind] ?? format.flow.enter[cursor.kind]) : format.flow.enter[cursor.kind];
-  const tabTarget = cursor.empty ? format.flow.tab[cursor.kind] : format.flow.tabAtEnd[cursor.kind];
+  const tabTarget = nextInCycle(format, cursor.kind);
   const pages = layout?.pages.length ?? 1;
   const keep = (e: React.MouseEvent) => e.preventDefault();
 
@@ -406,10 +574,16 @@ export function App() {
           <span className="brand" aria-label="Punchline">
             Punchline
           </span>
-          <button className="btn btn-quiet" onClick={() => setDialog('library')} title="All scripts">
+          <button className="btn btn-quiet" onClick={() => setDialog('library')} title="Projects, scripts and drafts">
             {icons.library()}
-            <span className="hide-sm">Scripts</span>
+            <span className="hide-sm">Library</span>
           </button>
+          {project && (
+            <button className="crumb hide-sm" onClick={() => setDialog('library')} title="Open this project in the library">
+              {project.title}
+              <span aria-hidden="true">/</span>
+            </button>
+          )}
           <button className="doc-title" onClick={() => setDialog('title')} title="Edit title page">
             {displayTitle(script)}
           </button>
@@ -423,7 +597,7 @@ export function App() {
           <label className="element-picker">
             <span className="visually-hidden">Element</span>
             <select value={cursor.kind} onChange={(e) => editorRef.current?.setKind(e.target.value as ElementKind)} aria-label="Element type">
-              {format.elementOrder.map((k) => (
+              {(format.elementOrder.includes(cursor.kind) ? format.elementOrder : [...format.elementOrder, cursor.kind]).map((k) => (
                 <option key={k} value={k}>
                   {format.elements[k].label} ({ALT}+{format.elements[k].shortcut})
                 </option>
@@ -451,7 +625,7 @@ export function App() {
           </span>
         </div>
         <div className="topbar-right">
-          <button className="btn btn-quiet hide-sm" onClick={importFile} title="Import Fountain, Final Draft or Punchline file">
+          <button className="btn btn-quiet hide-sm" onClick={() => importInto(script.projectId)} title="Import Fountain, Final Draft or Punchline file">
             {icons.upload()}
             <span className="hide-md">Import</span>
           </button>
@@ -472,7 +646,7 @@ export function App() {
                   Final Draft <span className="menu-hint">.fdx</span>
                 </button>
                 <button role="menuitem" onClick={() => exportAs('native')}>
-                  Punchline backup <span className="menu-hint">.punchline</span>
+                  Punchline backup <span className="menu-hint">with drafts</span>
                 </button>
               </div>
             )}
@@ -502,6 +676,21 @@ export function App() {
               cursorIndex={cursor.index}
               rememberedHere={rememberedHere}
               rememberedElsewhere={rememberedElsewhere}
+              elsewhereLabel={project ? `From other scripts in ${project.title}` : 'From your other scripts'}
+              draftCount={drafts.length}
+              drafts={
+                <DraftsPanel
+                  drafts={drafts}
+                  baselineId={baselineDraft?.id ?? null}
+                  suggestion={draftSuggestion}
+                  onSave={saveDraft}
+                  onRestore={restoreDraft}
+                  onBranch={branchDraft}
+                  onDelete={deleteDraft}
+                  onCompare={openCompare}
+                  onBaseline={(id) => update((s) => ({ ...s, settings: { ...s.settings, revisionBaseline: id } }))}
+                />
+              }
               showSceneNumbers={script.settings.sceneNumbers}
               onGo={goTo}
               onRename={setRenaming}
@@ -518,6 +707,7 @@ export function App() {
             initialElements={script.elements}
             format={format}
             settings={script.settings}
+            baseline={baseline}
             memory={memory}
             onChange={handleChange}
             onLayout={setLayout}
@@ -534,23 +724,27 @@ export function App() {
             <span>
               <kbd>↵</kbd> {label(enterTarget)}
             </span>
-            {cursor.suggesting ? (
-              <span>
-                <kbd>⇥</kbd> Accept suggestion
-              </span>
-            ) : (
-              tabTarget && (
-                <span>
-                  <kbd>⇥</kbd> {label(tabTarget)}
-                </span>
-              )
-            )}
+            <span>
+              <kbd>⇥</kbd> {label(tabTarget)}
+            </span>
           </span>
         </span>
         <span className="status-stats">
           <span>
             Page {Math.min(cursor.page, pages)} of {pages}
           </span>
+          {baselineDraft && (
+            <button
+              className="rev-indicator hide-sm"
+              onClick={() => {
+                setTab('drafts');
+                setSidebarOpen(true);
+              }}
+              title="Revision marks are on"
+            >
+              * since {baselineDraft.name}
+            </button>
+          )}
           <span className="hide-sm">{analysis.scenes.length} scenes</span>
           <span className="hide-sm">{analysis.words.toLocaleString()} words</span>
           <span className={`save-state ${saveState}`} role="status">
@@ -562,18 +756,43 @@ export function App() {
       <LibraryDialog
         open={dialog === 'library'}
         scripts={summaries}
+        projects={projects}
         currentId={script.id}
+        currentProjectId={script.projectId}
         persistent={library.persistent}
         formats={FORMATS}
         onOpen={openScript}
         onNew={newScript}
-        onImport={importFile}
+        onImport={importInto}
         onDuplicate={duplicate}
         onDelete={remove}
+        onMove={moveScript}
+        onCreateProject={addProject}
+        onRenameProject={renameProject}
+        onDeleteProject={deleteProject}
+        onExportProject={exportProject}
         onClose={() => setDialog(null)}
       />
-      <TitlePageDialog open={dialog === 'title'} value={script.titlePage} onSave={setTitlePage} onClose={() => setDialog(null)} />
-      <SettingsDialog open={dialog === 'settings'} settings={script.settings} theme={theme} onTheme={changeTheme} onChange={setSettings} onClose={() => setDialog(null)} />
+      <CompareDialog
+        open={compare !== null}
+        versions={versions}
+        from={compare?.from ?? ''}
+        to={compare?.to ?? 'current'}
+        onPick={(from, to) => setCompare((c) => (c ? { ...c, from, to } : c))}
+        onClose={() => setCompare(null)}
+      />
+      <TitlePageDialog open={dialog === 'title'} value={script.titlePage} episodic={format.episodic} onSave={setTitlePage} onClose={() => setDialog(null)} />
+      <SettingsDialog
+        open={dialog === 'settings'}
+        settings={script.settings}
+        formatId={format.id}
+        formats={FORMATS}
+        onFormat={(formatId) => update((s) => ({ ...s, formatId }))}
+        theme={theme}
+        onTheme={changeTheme}
+        onChange={setSettings}
+        onClose={() => setDialog(null)}
+      />
       <HelpDialog open={dialog === 'help'} format={format} onClose={() => setDialog(null)} />
       <RenameDialog name={renaming} onRename={renameCharacter} onClose={() => setRenaming(null)} />
       {toast && (

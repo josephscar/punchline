@@ -2,6 +2,7 @@ import { Plugin, PluginKey, type EditorState } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import type { ScriptFormat } from '../../core/formats';
 import { layoutScript, type ScriptLayout } from '../../core/layout/paginate';
+import { revisedIndices } from '../../core/diff';
 import type { ScriptElement, ScriptSettings } from '../../core/types';
 import { docToElements } from '../convert';
 
@@ -15,22 +16,29 @@ import { docToElements } from '../convert';
 export interface LayoutOptions {
   getFormat: () => ScriptFormat;
   getSettings: () => ScriptSettings;
+  /** Pages of the draft chosen for revision marks, if any. */
+  getBaseline: () => ScriptElement[] | null;
 }
 
 export interface LayoutState {
   elements: ScriptElement[];
   layout: ScriptLayout;
+  /** Elements changed since the revision baseline. */
+  revised: Set<number>;
+  /** `revised` is from an earlier version of the document and is being recomputed. */
+  stale: boolean;
 }
 
 export const layoutKey = new PluginKey<LayoutState>('layout');
 
-/** Dispatch a transaction with this meta to re-run layout after settings change. */
-export const REFRESH_LAYOUT = { refresh: true };
+type LayoutMeta = { refresh: true } | { revised: Set<number>; doc: unknown };
 
-function compute(state: EditorState, options: LayoutOptions): LayoutState {
-  const elements = docToElements(state.doc);
-  return { elements, layout: layoutScript({ elements, settings: options.getSettings() }, options.getFormat()) };
-}
+/** Dispatch a transaction with this meta to re-run layout after settings change. */
+export const REFRESH_LAYOUT: LayoutMeta = { refresh: true };
+
+/** Revision diffs slower than this run after typing pauses instead of on every keystroke. */
+const REVISION_BUDGET_MS = 5;
+const REVISION_DELAY_MS = 300;
 
 function pageBreakWidget(page: number, topEm: number) {
   return () => {
@@ -60,6 +68,15 @@ function labelWidget(text: string) {
   };
 }
 
+function revisionWidget() {
+  const dom = document.createElement('span');
+  dom.className = 'pl-rev-mark';
+  dom.contentEditable = 'false';
+  dom.title = 'Changed since the draft chosen for revision marks';
+  dom.textContent = '*';
+  return dom;
+}
+
 function contdWidget(text: string) {
   return () => {
     const dom = document.createElement('span');
@@ -77,14 +94,61 @@ export function editorSpaceBefore(format: ScriptFormat, kind: keyof ScriptFormat
 }
 
 export function layoutPlugin(options: LayoutOptions): Plugin<LayoutState> {
+  // How long the last revision diff took; big, heavily rewritten scripts are
+  // diffed once typing pauses so keystrokes stay instant.
+  let revisionCost = 0;
+  const revisionsFor = (elements: ScriptElement[]) => {
+    const baseline = options.getBaseline();
+    if (!baseline) return new Set<number>();
+    const start = performance.now();
+    const revised = revisedIndices(baseline, elements);
+    revisionCost = performance.now() - start;
+    return revised;
+  };
+
+  const compute = (state: EditorState, prev: LayoutState | null, meta: LayoutMeta | undefined, docChanged: boolean): LayoutState => {
+    const elements = docToElements(state.doc);
+    let revised: Set<number>;
+    let stale = false;
+    if (meta && 'revised' in meta && meta.doc === state.doc) revised = meta.revised;
+    else if (!options.getBaseline()) revised = new Set();
+    else if (!prev || !docChanged || revisionCost < REVISION_BUDGET_MS) revised = revisionsFor(elements);
+    else {
+      revised = prev.revised;
+      stale = true;
+    }
+    const layout = layoutScript({ elements, settings: options.getSettings() }, options.getFormat(), { revised });
+    return { elements, revised, stale, layout };
+  };
+
   return new Plugin<LayoutState>({
     key: layoutKey,
     state: {
-      init: (_, state) => compute(state, options),
+      init: (_, state) => compute(state, null, undefined, false),
       apply(tr, prev, _old, state) {
-        if (tr.docChanged || tr.getMeta(layoutKey)) return compute(state, options);
+        const meta = tr.getMeta(layoutKey) as LayoutMeta | undefined;
+        if (tr.docChanged || meta) return compute(state, prev, meta, tr.docChanged);
         return prev;
       },
+    },
+    view() {
+      let timer = 0;
+      return {
+        update(view) {
+          const data = layoutKey.getState(view.state);
+          if (!data?.stale) return;
+          window.clearTimeout(timer);
+          const doc = view.state.doc;
+          timer = window.setTimeout(() => {
+            if (view.state.doc !== doc) return;
+            const revised = revisionsFor(data.elements);
+            view.dispatch(view.state.tr.setMeta(layoutKey, { revised, doc } satisfies LayoutMeta));
+          }, REVISION_DELAY_MS);
+        },
+        destroy() {
+          window.clearTimeout(timer);
+        },
+      };
     },
     props: {
       decorations(state) {
@@ -133,6 +197,9 @@ export function layoutPlugin(options: LayoutOptions): Plugin<LayoutState> {
                 ignoreSelection: true,
               }),
             );
+          }
+          if (data.revised.has(index)) {
+            decorations.push(Decoration.widget(contentStart, revisionWidget, { side: -1, key: 'rev', ignoreSelection: true }));
           }
           if (layout.contdCues.has(index) && node.content.size) {
             decorations.push(

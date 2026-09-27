@@ -40,12 +40,11 @@ export interface ElementFlow {
   enter: Record<ElementKind, ElementKind>;
   /** Enter in an empty element turns it into this element instead. */
   emptyEnter: Partial<Record<ElementKind, ElementKind>>;
-  /** Tab in an empty element turns it into this element. */
-  tab: Partial<Record<ElementKind, ElementKind>>;
-  /** Shift+Tab in an empty element turns it into this element. */
-  shiftTab: Partial<Record<ElementKind, ElementKind>>;
-  /** Tab at the end of a non-empty element starts this element next. */
-  tabAtEnd: Partial<Record<ElementKind, ElementKind>>;
+  /**
+   * Tab turns the current element into the next one in this list, Shift+Tab
+   * the previous one, wrapping around at either end.
+   */
+  tabCycle: ElementKind[];
 }
 
 export interface PageSetup {
@@ -65,6 +64,9 @@ export interface Vocabulary {
   sceneIntros: string[];
   times: string[];
   transitions: string[];
+  /** The usual order of acts, e.g. COLD OPEN, ACT ONE, ACT TWO, TAG. Empty for formats without acts. */
+  actSequence: string[];
+  /** Every act name offered, in addition to the sequence. */
   actNames: string[];
   endOfShow: string;
   shots: string[];
@@ -76,6 +78,10 @@ export interface ScriptFormat {
   id: string;
   name: string;
   description: string;
+  /** Episodes of a series (title page has a series and an episode title) rather than a film. */
+  episodic: boolean;
+  /** One line describing what a new script starts with. */
+  templateSummary: string;
   page: PageSetup;
   elements: Record<ElementKind, ElementStyle>;
   /** Order elements appear in menus and help. */

@@ -17,11 +17,18 @@ async function suggestions(page: Page) {
 }
 
 async function newBlankScript(page: Page) {
-  await page.getByRole('button', { name: 'Scripts' }).click();
+  await page.getByRole('button', { name: 'Library' }).click();
   await page.getByRole('button', { name: /Blank page/ }).click();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await page.locator('.pl-editor').click();
 }
+
+/** Click a suggestion in the autocomplete list. */
+async function pick(page: Page, label: string) {
+  await page.locator('.ac-popup:not([hidden]) .ac-item', { hasText: label }).first().click();
+}
+
+const status = (page: Page) => page.locator('.status-element b');
 
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
@@ -43,21 +50,21 @@ test('opens with the sample pilot and its structure in the navigator', async ({ 
   await expect(page.getByText('Page 1 of 2')).toBeVisible();
 });
 
-test('Enter and Tab move through single-cam elements', async ({ page }) => {
+test('Enter moves through single-cam elements and Tab cycles the element type', async ({ page }) => {
   await newBlankScript(page);
   const k = page.keyboard;
   await k.type('int. kitchen - night');
-  await k.press('Escape');
-  await k.press('Enter');
+  await k.press('Enter'); // → Action (nothing is picked from the suggestions)
   await k.type('Dana stirs a pot.');
-  await k.press('Tab'); // → Character
+  await k.press('Enter'); // → another Action
+  await k.press('Tab'); // Action → Character
+  await expect(status(page)).toHaveText('Character');
   await k.type('DANA');
-  await k.press('Escape');
   await k.press('Enter'); // → Dialogue
   await k.type('Soup is ready!');
-  await k.press('Tab'); // → Parenthetical
+  await k.press('Enter'); // → Character
+  await k.press('Tab'); // Character → Parenthetical
   await k.type('beat');
-  await k.press('Escape');
   await k.press('Enter'); // → Dialogue
   await k.type('Anyone?');
   await k.press('Enter'); // → Character
@@ -65,7 +72,6 @@ test('Enter and Tab move through single-cam elements', async ({ page }) => {
   await k.type('Silence.');
   await k.press('Enter');
   await k.type('smash cut to:');
-  await k.press('Escape');
   await k.press('Enter'); // detected as a Transition → Scene Heading
   await k.type('ext.');
   expect(await elements(page)).toEqual([
@@ -83,37 +89,64 @@ test('Enter and Tab move through single-cam elements', async ({ page }) => {
   await expect(page.locator('.pl-el[data-kind="scene_heading"]').first()).toHaveCSS('text-transform', 'uppercase');
 });
 
-test('character names are remembered and the next speaker is predicted', async ({ page }) => {
+test('Tab cycles any element, with text or without; Shift+Tab goes back', async ({ page }) => {
+  await newBlankScript(page);
+  const k = page.keyboard;
+  await k.press('Tab');
+  await expect(status(page)).toHaveText('Action');
+  await k.type('Hello there');
+  for (const expected of ['Character', 'Parenthetical', 'Dialogue', 'Transition', 'Shot']) {
+    await k.press('Tab');
+    await expect(status(page)).toHaveText(expected);
+  }
+  await k.press('Shift+Tab');
+  await k.press('Shift+Tab');
+  await expect(status(page)).toHaveText('Dialogue');
+  expect(await elements(page)).toEqual(['dialogue: Hello there']);
+});
+
+test('suggestions are never picked for you: click one, or use the arrows and Enter', async ({ page }) => {
   await newBlankScript(page);
   const k = page.keyboard;
   await k.type('INT. OFFICE - DAY');
-  await k.press('Escape');
   await k.press('Enter');
   await k.type('They argue.');
-  await k.press('Tab');
+  await k.press('Enter');
+  await k.press('Tab'); // → Character
   await k.type('PAM');
-  await k.press('Escape');
   await k.press('Enter');
   await k.type('No.');
   await k.press('Enter');
   await k.type('JIM');
-  await k.press('Escape');
   await k.press('Enter');
   await k.type('Yes.');
   await k.press('Enter');
-  // Empty character line: PAM is predicted (conversation alternates).
+  // Empty character line: PAM is predicted first (conversations alternate)…
   await expect.poll(() => suggestions(page)).toEqual(expect.arrayContaining(['PAM', 'JIM']));
   expect((await suggestions(page))[0]).toBe('PAM');
-  await k.press('Tab'); // accept prediction
+  await expect(page.locator('.ac-item.is-active')).toHaveCount(0);
+  // …but Tab still just changes the element type.
+  await k.press('Tab');
+  await expect(status(page)).toHaveText('Parenthetical');
+  await k.press('Shift+Tab');
+  await expect(status(page)).toHaveText('Character');
+  expect((await elements(page)).at(-1)).toBe('character: ');
+  // Click to choose.
+  await pick(page, 'PAM');
   await k.press('Enter');
   await k.type('Fine.');
   await k.press('Enter');
-  await k.type('j'); // typed prefix → Enter accepts and moves on to dialogue
+  // Typing a prefix and pressing Enter keeps exactly what was typed.
+  await k.type('JI');
   await expect.poll(() => suggestions(page)).toEqual(['JIM']);
   await k.press('Enter');
+  expect((await elements(page)).slice(-2)).toEqual(['character: JI', 'dialogue: ']);
+  await k.press('Backspace'); // back to the character line
+  await k.press('ArrowDown'); // highlight JIM
+  await expect(page.locator('.ac-item.is-active')).toHaveText(/JIM/);
+  await k.press('Enter'); // use it and move on to dialogue
   await k.type('Great.');
-  const els = await elements(page);
-  expect(els.slice(-4)).toEqual(['character: PAM', 'dialogue: Fine.', 'character: JIM', 'dialogue: Great.']);
+  expect((await elements(page)).slice(-4)).toEqual(['character: PAM', 'dialogue: Fine.', 'character: JIM', 'dialogue: Great.']);
   // Names from the sample script are remembered across scripts.
   await k.press('Enter');
   await k.type('mar');
@@ -125,22 +158,23 @@ test('scene headings complete intro, location and time of day', async ({ page })
   await page.locator('.pl-el[data-kind="action"]').first().click();
   await k.press('Control+End'); // end of the script: after END OF ACT ONE
   // The editor learns about caret moves asynchronously; wait until it has.
-  await expect(page.locator('.status-element b')).toHaveText('End of Act');
+  await expect(status(page)).toHaveText('End of Act');
   await k.press('Enter'); // End of Act → New Act
   await k.type('act two');
-  await k.press('Escape');
   await k.press('Enter'); // New Act → Scene Heading
   await expect.poll(() => suggestions(page)).toEqual(['INT.', 'EXT.', 'INT./EXT.', 'EXT./INT.', 'I/E.']);
-  await k.press('Tab'); // INT.
+  await pick(page, 'INT.');
   await k.type('holl');
   await expect
     .poll(() => suggestions(page))
     .toEqual(['HOLLOWAY PAPER CO. - BREAK ROOM', 'HOLLOWAY PAPER CO. - BULLPEN', 'HOLLOWAY PAPER CO. - PARKING LOT']);
   await k.press('ArrowDown');
+  await k.press('ArrowDown');
   await k.press('Enter'); // BULLPEN, chains on to the time of day
   await expect.poll(async () => (await suggestions(page)).slice(0, 2)).toEqual(['DAY', 'NIGHT']);
   await k.type('lat');
-  await k.press('Enter'); // LATER, then on to Action
+  await pick(page, 'LATER');
+  await k.press('Enter');
   await k.type('The burrito is gone.');
   const els = await elements(page);
   expect(els.slice(-3)).toEqual(['act_start: act two', 'scene_heading: INT. HOLLOWAY PAPER CO. - BULLPEN - LATER', 'action: The burrito is gone.']);
@@ -170,7 +204,7 @@ test('notes are created with [[ and listed, but never exported', async ({ page }
 test('exports a PDF and keeps work after a reload', async ({ page }) => {
   await page.locator('.pl-el[data-kind="action"]').first().click();
   await page.keyboard.press('Control+End');
-  await expect(page.locator('.status-element b')).toHaveText('End of Act');
+  await expect(status(page)).toHaveText('End of Act');
   await page.keyboard.press('Enter');
   await page.keyboard.type('Persistence works.');
   await page.waitForTimeout(1200); // autosave debounce

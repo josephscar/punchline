@@ -108,6 +108,18 @@
   white-space: nowrap;
 }
 
+/* Revision marks: lines changed since the chosen draft. */
+.pl-rev-mark {
+  position: absolute;
+  top: 0;
+  font-weight: 700;
+  color: var(--accent);
+  user-select: none;
+  pointer-events: auto;
+  text-indent: 0;
+  text-decoration: none;
+}
+
 /* Page break markers. */
 .pl-page-break {
   position: absolute;

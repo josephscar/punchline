@@ -117,6 +117,13 @@ describe('layoutScript', () => {
     expect(pages[0].lines.filter((l) => l.sceneNumber).map((l) => l.sceneNumber)).toEqual([1, 2]);
   });
 
+  it('flags every line of a revised element', () => {
+    const { pages } = layoutScript({ elements: [el('action', actionLines(3)), el('action', 'Same.')], settings: defaultSettings() }, format, {
+      revised: new Set([0]),
+    });
+    expect(pages[0].lines.map((l) => !!l.revised)).toEqual([true, true, true, false]);
+  });
+
   it('never exceeds the page length', () => {
     const elements: ScriptElement[] = [];
     for (let i = 0; i < 40; i++) {

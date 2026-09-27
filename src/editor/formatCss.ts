@@ -33,6 +33,8 @@ export function formatCss(format: ScriptFormat): string {
     // Labels in the margin sit at the page's left edge whatever the indent.
     rules.push(`${sel} .pl-el-label { left: -${left - 1 + s.indent}ch; }`);
     rules.push(`${sel} .pl-page-break { left: -${left + s.indent}ch; }`);
+    // Revision marks sit in the right margin, 0.6" past the text column.
+    rules.push(`${sel} .pl-rev-mark { left: ${page.widthIn * 10 - left - right + 6 - s.indent}ch; }`);
     if (s.wrapWith) {
       const [open, close] = s.wrapWith.map((t) => JSON.stringify(t));
       rules.push(`${sel}::before { content: ${open}; }`);

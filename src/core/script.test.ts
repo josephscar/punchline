@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createScript, displayTitle, parseNative, sanitizeScript, serializeNative } from './script';
+import { createScript, displayTitle, sanitizeScript } from './script';
 
 describe('scripts', () => {
   it('starts a single-cam script with a cold open, two acts and a tag', () => {
@@ -9,10 +9,13 @@ describe('scripts', () => {
     expect(script.elements[script.elements.length - 1].runs[0].text).toBe('END OF SHOW');
   });
 
-  it('round-trips through the native file format', () => {
-    const script = createScript({ title: 'PAPER TRAIL' });
-    script.characterMemory = { DANA: 4 };
-    expect(parseNative(serializeNative(script))).toEqual(script);
+  it('upgrades version 1 scripts', () => {
+    const v1 = { ...createScript(), schemaVersion: 1, settings: { sceneNumbers: true } } as Record<string, unknown>;
+    delete v1.projectId;
+    const s = sanitizeScript(v1);
+    expect(s.schemaVersion).toBe(2);
+    expect(s.projectId).toBeNull();
+    expect(s.settings).toEqual({ sceneNumbers: true, autoContd: true, includeTitlePage: true, revisionBaseline: null });
   });
 
   it('cleans up malformed data', () => {
