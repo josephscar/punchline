@@ -242,7 +242,7 @@ code {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   min-width: 0;
@@ -287,6 +287,17 @@ code {
 .doc-title:hover {
   border-color: var(--border);
   background: var(--surface-2);
+}
+.preview-pill {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 .tool-group {
   display: inline-flex;
@@ -545,7 +556,7 @@ code {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 14px;
+  padding: 6px 16px;
   background: var(--surface);
   border-top: 1px solid var(--border);
   font-size: 12px;
@@ -953,7 +964,7 @@ code {
   }
   .topbar {
     flex-wrap: wrap;
-    padding: 6px 8px;
+    padding: 6px 16px;
   }
   .topbar-tools {
     order: 3;

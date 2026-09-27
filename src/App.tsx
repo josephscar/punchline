@@ -23,11 +23,17 @@ type Theme = 'system' | 'light' | 'dark';
 
 const SAVE_DELAY = 500;
 
+// A host page (e.g. an embedding viewer) may already set the theme; "System" defers to it.
+const hostTheme = typeof document === 'undefined' ? undefined : document.documentElement.dataset.theme;
+
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
-  if (theme === 'system') delete root.dataset.theme;
-  else root.dataset.theme = theme;
+  const value = theme === 'system' ? hostTheme : theme;
+  if (value) root.dataset.theme = value;
+  else delete root.dataset.theme;
 }
+
+const PREVIEW_EXPORT_MESSAGE = 'Exporting is turned off in this online preview. Run Punchline on your computer to save PDF, Fountain and Final Draft files.';
 
 export function App() {
   const [library, setLibrary] = useState<Library | null>(null);
@@ -248,6 +254,7 @@ export function App() {
 
   const exportAs = async (kind: 'pdf' | 'fountain' | 'fdx' | 'native') => {
     setExportOpen(false);
+    if (__DEMO__) return notify(PREVIEW_EXPORT_MESSAGE);
     const s = latest();
     if (!s) return;
     try {
@@ -264,6 +271,7 @@ export function App() {
   };
 
   const previewPdf = async () => {
+    if (__DEMO__) return notify(PREVIEW_EXPORT_MESSAGE);
     const blob = await makePdf();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -405,6 +413,11 @@ export function App() {
           <button className="doc-title" onClick={() => setDialog('title')} title="Edit title page">
             {displayTitle(script)}
           </button>
+          {__DEMO__ && (
+            <span className="preview-pill" title={PREVIEW_EXPORT_MESSAGE}>
+              Preview
+            </span>
+          )}
         </div>
         <div className="topbar-tools" role="toolbar" aria-label="Formatting">
           <label className="element-picker">

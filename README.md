@@ -33,7 +33,7 @@ npm run dev        # open http://localhost:5173
 
 The first launch opens a short sample pilot that uses every element. Start your own from **Scripts → New Single-Cam Sitcom**.
 
-To build a static site you can host anywhere, run `npm run build`; the output goes to `dist/`. `npm run build:single` produces a single self-contained `dist-single/index.html` that you can open straight from disk.
+To build a static site you can host anywhere, run `npm run build`; the output goes to `dist/`. `npm run build:single` produces a single self-contained `dist-single/index.html` that you can open straight from disk. `npm run build:demo` builds the same file for an online preview where the host blocks downloads; exporting is switched off there and explains why.
 
 To put it online with GitHub Pages, go to **Settings → Pages**, set **Source** to **GitHub Actions**, then run the **Deploy to GitHub Pages** workflow from the Actions tab.
 
