@@ -1,4 +1,4 @@
-import { Plugin, PluginKey, TextSelection, type EditorState } from 'prosemirror-state';
+import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { ScriptFormat } from '../../core/formats';
 import { getSuggestions, type Suggestion } from '../../core/suggestions';
@@ -28,6 +28,8 @@ interface AcState {
   armed: boolean;
   /** Suppressed for this element text (after Esc or accepting). */
   suppressed: string | null;
+  /** Element the list belongs to (its start position). */
+  element: number;
 }
 
 export const autocompleteKey = new PluginKey<AcState>('autocomplete');
@@ -60,6 +62,11 @@ function compute(state: EditorState, options: AutocompleteOptions): Suggestion[]
   });
 }
 
+/** Close the list for a programmatic edit (e.g. renaming a character everywhere). */
+export function closeSuggestions(tr: Transaction): Transaction {
+  return tr.setMeta(autocompleteKey, { type: 'suppress', key: '' } satisfies Meta);
+}
+
 export function acceptSuggestion(view: EditorView, item: Suggestion, advance?: ScriptFormat): void {
   const { state } = view;
   const el = currentElement(state);
@@ -82,7 +89,7 @@ export function autocompletePlugin(options: AutocompleteOptions): Plugin<AcState
   return new Plugin<AcState>({
     key: autocompleteKey,
     state: {
-      init: () => ({ items: [], selected: 0, armed: false, suppressed: null }),
+      init: () => ({ items: [], selected: 0, armed: false, suppressed: null, element: -1 }),
       apply(tr, prev, _old, state) {
         const meta = tr.getMeta(autocompleteKey) as Meta | undefined;
         if (meta?.type === 'move') {
@@ -95,13 +102,19 @@ export function autocompletePlugin(options: AutocompleteOptions): Plugin<AcState
         if (meta?.type === 'suppress') suppressed = meta.key;
         const key = contextKey(state);
         if (suppressed !== null && suppressed !== key && meta?.type !== 'suppress') suppressed = null;
-        if (!tr.docChanged && !tr.selectionSet && meta?.type !== 'suppress') return prev;
-        if (suppressed === key || meta?.type === 'suppress') return { items: [], selected: 0, armed: false, suppressed };
-        const items = compute(state, options);
         const el = currentElement(state);
+        const closed: AcState = { items: [], selected: 0, armed: false, suppressed, element: el.start };
+        if (meta?.type === 'suppress' || suppressed === key) return closed;
+        if (!tr.docChanged) {
+          if (!tr.selectionSet) return prev;
+          // Moving the caret never opens the list (arrow keys must keep working);
+          // it only updates a list that is already open in the same element.
+          if (!prev.items.length || prev.element !== el.start) return closed;
+        }
+        const items = compute(state, options);
         // Armed once something has been typed in the part being completed.
         const typed = items.length > 0 && el.text.slice(items[0].from, el.offset).trim().length > 0;
-        return { items, selected: 0, armed: typed, suppressed };
+        return { items, selected: 0, armed: typed, suppressed, element: el.start };
       },
     },
     props: {

@@ -50,7 +50,7 @@ Scripts are saved automatically to the browser's IndexedDB, on your machine only
 | Tab | empty Action | Character (then Transition → Scene Heading) |
 | Tab | Dialogue | adds a Parenthetical, splitting the line if you're mid-speech |
 | Tab | autocomplete open | accepts the highlighted suggestion |
-| Ctrl/⌘ + 1…9, 0 | anywhere | Scene Heading, Action, Character, Parenthetical, Dialogue, Transition, Shot, New Act, End of Act, Note |
+| Alt/⌥ + 1…9, 0 | anywhere | Scene Heading, Action, Character, Parenthetical, Dialogue, Transition, Shot, New Act, End of Act, Note (Ctrl/⌘ + number also works where the browser doesn't reserve it for switching tabs) |
 | Ctrl/⌘ + B / I / U | text | bold, italic, underline |
 | Shift + Enter | text | line break inside an element |
 | Ctrl/⌘ + P | anywhere | PDF preview |

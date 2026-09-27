@@ -12,7 +12,7 @@ import { emptyTitlePage, type ElementKind, type ScriptElement, type ScriptSettin
 import { currentElement, enterCommand, insertHardBreak, jumpTo, selectElement, setKind, tabCommand } from './commands';
 import { docToElements, elementsToDoc, nodeToElement } from './convert';
 import { formatCss } from './formatCss';
-import { autocompleteKey, autocompletePlugin } from './plugins/autocomplete';
+import { autocompleteKey, autocompletePlugin, closeSuggestions } from './plugins/autocomplete';
 import { layoutKey, layoutPlugin, REFRESH_LAYOUT } from './plugins/layout';
 import { smartTypePlugin } from './plugins/smartType';
 import { schema } from './schema';
@@ -176,7 +176,8 @@ export function ScriptEditor(props: Props) {
           }, CHANGE_DELAY);
         }
         if (tr.docChanged || tr.getMeta(layoutKey)) reportLayout(view.state);
-        if (tr.docChanged || tr.selectionSet || tr.getMeta(autocompleteKey)) reportCursor(view.state);
+        // Layout refreshes also follow loading another script, so report the cursor then too.
+        if (tr.docChanged || tr.selectionSet || tr.getMeta(autocompleteKey) || tr.getMeta(layoutKey)) reportCursor(view.state);
       },
     });
     viewRef.current = view;
@@ -259,7 +260,7 @@ export function ScriptEditor(props: Props) {
         const view = viewRef.current;
         if (!view) return;
         const doc = elementsToDoc(elements);
-        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content));
+        view.dispatch(closeSuggestions(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content)));
       },
     }),
     [],

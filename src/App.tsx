@@ -13,7 +13,7 @@ import { ScriptEditor, type CursorInfo, type ScriptEditorHandle, type Shortcut }
 import { openLibrary, type Library, type ScriptSummary } from './storage/library';
 import { LibraryDialog, RenameDialog, SettingsDialog, TitlePageDialog } from './ui/Dialogs';
 import { downloadBlob, downloadText, IMPORT_ACCEPT, importScriptFile, loadPdfFonts, pickFile, safeFilename } from './ui/files';
-import { HelpDialog, MOD } from './ui/HelpDialog';
+import { ALT, HelpDialog, MOD } from './ui/HelpDialog';
 import { icons } from './ui/icons';
 import { Sidebar, type SidebarTab } from './ui/Sidebar';
 
@@ -412,7 +412,7 @@ export function App() {
             <select value={cursor.kind} onChange={(e) => editorRef.current?.setKind(e.target.value as ElementKind)} aria-label="Element type">
               {format.elementOrder.map((k) => (
                 <option key={k} value={k}>
-                  {format.elements[k].label} ({MOD}+{format.elements[k].shortcut})
+                  {format.elements[k].label} ({ALT}+{format.elements[k].shortcut})
                 </option>
               ))}
             </select>

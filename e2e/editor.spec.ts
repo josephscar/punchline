@@ -238,3 +238,24 @@ test('scenes can be reordered by dragging them in the navigator', async ({ page 
   expect(els[at + 1]).toMatch(/^action: Dana sprints across the lot/);
   expect(els[at - 1]).toBe('act_start: COLD OPEN');
 });
+
+test('arrow keys move through character names without getting caught by suggestions', async ({ page }) => {
+  const cue = page.locator('.pl-el[data-kind="character"]').first();
+  await cue.click();
+  await page.keyboard.press('End');
+  await expect(page.locator('.status-element b')).toHaveText('Character');
+  await expect(page.locator('.ac-popup')).toBeHidden();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.status-element b')).toHaveText('Dialogue');
+});
+
+test('Alt + number switches the element type', async ({ page }) => {
+  await newBlankScript(page);
+  await expect(page.locator('.status-element b')).toHaveText('Scene Heading');
+  await page.keyboard.press('Alt+3');
+  await expect(page.locator('.status-element b')).toHaveText('Character');
+  await page.keyboard.press('Alt+0');
+  await expect(page.locator('.status-element b')).toHaveText('Note');
+  await page.getByLabel('Element type').selectOption('transition');
+  await expect(page.locator('.status-element b')).toHaveText('Transition');
+});

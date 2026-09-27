@@ -236,7 +236,7 @@ export function Sidebar(props: Props) {
       <button className="btn btn-quiet full" onClick={props.onAddNote}>
         {icons.plus()} Add note below cursor
       </button>
-      {analysis.notes.length === 0 && <p className="nav-empty">No notes yet. Type [[ on an empty line or press Ctrl/⌘+0. Notes are never printed.</p>}
+      {analysis.notes.length === 0 && <p className="nav-empty">No notes yet. Type [[ on an empty line or press Alt/⌥+0. Notes are never printed.</p>}
       <ul className="nav-list">
         {analysis.notes.map((n) => (
           <li key={n.index}>

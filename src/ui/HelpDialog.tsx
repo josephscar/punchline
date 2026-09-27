@@ -3,6 +3,8 @@ import { Modal } from './Dialogs';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const MOD = isMac ? '⌘' : 'Ctrl';
+/** Element shortcuts: browsers keep Ctrl/⌘+1…9 for switching tabs, so Alt/⌥ is the one that always works. */
+export const ALT = isMac ? '⌥' : 'Alt';
 
 export function HelpDialog(props: { open: boolean; format: ScriptFormat; onClose: () => void }) {
   const { format } = props;
@@ -31,7 +33,7 @@ export function HelpDialog(props: { open: boolean; format: ScriptFormat; onClose
                       <span className="help-sub">{format.elements[k].hint}</span>
                     </th>
                     <td>
-                      <kbd>{MOD}</kbd>+<kbd>{format.elements[k].shortcut}</kbd>
+                      <kbd>{ALT}</kbd>+<kbd>{format.elements[k].shortcut}</kbd>
                     </td>
                     <td>{label(format.flow.enter[k])}</td>
                     <td>{tab ? label(tab) : '—'}</td>
@@ -60,7 +62,7 @@ export function HelpDialog(props: { open: boolean; format: ScriptFormat; onClose
               Just type: <code>int.</code> becomes a Scene Heading, <code>cut to:</code> a Transition, <code>(</code> in dialogue a Parenthetical, <code>[[</code> a Note, <code>ACT TWO</code> a New Act.
             </li>
             <li>
-              <kbd>{MOD}</kbd>+<kbd>B</kbd>/<kbd>I</kbd>/<kbd>U</kbd> bold, italic, underline · <kbd>Shift</kbd>+<kbd>Enter</kbd> line break · <kbd>{MOD}</kbd>+<kbd>Z</kbd> undo · <kbd>{MOD}</kbd>+<kbd>P</kbd> PDF · <kbd>{MOD}</kbd>+<kbd>/</kbd> this sheet.
+              <kbd>{ALT}</kbd>+<kbd>1</kbd>…<kbd>0</kbd> switch element (also <kbd>{MOD}</kbd>+number where the browser allows) · <kbd>{MOD}</kbd>+<kbd>B</kbd>/<kbd>I</kbd>/<kbd>U</kbd> bold, italic, underline · <kbd>Shift</kbd>+<kbd>Enter</kbd> line break · <kbd>{MOD}</kbd>+<kbd>Z</kbd> undo · <kbd>{MOD}</kbd>+<kbd>P</kbd> PDF · <kbd>{MOD}</kbd>+<kbd>/</kbd> this sheet.
             </li>
           </ul>
           <h3 className="section-title">Single-cam sitcom format</h3>
