@@ -1,3 +1,4 @@
+import { sanitizeDraft, sanitizeScript } from '../core/script';
 import type { Draft, Project, Script } from '../core/types';
 
 /** JSON with object keys sorted, so equal content always gives equal text. */
@@ -28,9 +29,13 @@ function cyrb53(str: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36) + str.length.toString(36);
 }
 
-/** Hash of what a script says; timestamps and which project it sits in don't count. */
+/**
+ * Hash of what a script says; timestamps and which project it sits in don't
+ * count. It's taken of the script as it reads back from the cloud (sanitised),
+ * so a script and its downloaded copy always hash the same.
+ */
 export function hashScript(script: Script): string {
-  const { updatedAt: _u, createdAt: _c, projectId: _p, ...content } = script;
+  const { updatedAt: _u, createdAt: _c, projectId: _p, ...content } = sanitizeScript(script);
   return cyrb53(stableStringify(content));
 }
 
@@ -39,5 +44,5 @@ export function hashProject(project: Project): string {
 }
 
 export function hashDraft(draft: Draft): string {
-  return cyrb53(stableStringify(draft));
+  return cyrb53(stableStringify(sanitizeDraft(draft)));
 }

@@ -45,7 +45,7 @@ export function parseFirebaseConfig(text: string): FirebaseConfig {
     }
   }
   const missing = (['apiKey', 'authDomain', 'projectId', 'appId'] as const).filter((k) => !out[k]);
-  if (missing.length) throw new Error(`That doesn't look like a Firebase web config: ${missing.join(', ')} missing.`);
+  if (missing.length) throw new Error(`That doesn’t look like a Firebase web config: ${missing.join(', ')} missing.`);
   return out as unknown as FirebaseConfig;
 }
 

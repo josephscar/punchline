@@ -1,10 +1,12 @@
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { deleteApp, initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   connectAuthEmulator,
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type Auth,
   type User,
@@ -73,8 +75,60 @@ export function watchUser(conn: FirebaseConnection, onChange: (user: CloudUser |
   return onAuthStateChanged(conn.auth, (u) => onChange(u ? toCloudUser(u) : null));
 }
 
-export async function signInWithGoogle(conn: FirebaseConnection): Promise<CloudUser> {
-  const result = await signInWithPopup(conn.auth, new GoogleAuthProvider());
+export function disconnectFirebase(conn: FirebaseConnection): Promise<void> {
+  return deleteApp(conn.app);
+}
+
+/** Why signing in failed, in words that say what to do about it; null when the person just closed the window. */
+export function signInErrorMessage(e: unknown): string | null {
+  const code = (e as { code?: string })?.code ?? '';
+  switch (code) {
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+    case 'auth/user-cancelled':
+      return null;
+    case 'auth/unauthorized-domain':
+      return `This site (${location.hostname}) isn’t allowed to sign in to your Firebase project yet. Add it in the Firebase console under Authentication → Settings → Authorized domains.`;
+    case 'auth/operation-not-allowed':
+    case 'auth/configuration-not-found':
+      return 'Google sign-in isn’t turned on for your Firebase project. Turn it on in the Firebase console under Authentication → Sign-in method.';
+    case 'auth/invalid-api-key':
+    case 'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
+      return 'Firebase rejected the API key. Paste the config again from Project settings → Your apps.';
+    case 'auth/network-request-failed':
+      return 'Couldn’t reach Google. Check your connection and try again.';
+    default:
+      return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/**
+ * Sign in with a Google pop-up. If the browser blocks pop-ups the page goes
+ * to Google instead and comes back signed in (watchUser reports it).
+ */
+export async function signInWithGoogle(conn: FirebaseConnection): Promise<CloudUser | null> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    const result = await signInWithPopup(conn.auth, provider);
+    return toCloudUser(result.user);
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+      await signInWithRedirect(conn.auth, provider);
+      return null;
+    }
+    throw e;
+  }
+}
+
+/**
+ * Emulator only: sign in as a made-up Google account without a pop-up. The
+ * Auth emulator accepts an unsigned token that just names the account.
+ */
+export async function signInToEmulator(conn: FirebaseConnection, email: string): Promise<CloudUser> {
+  const token = JSON.stringify({ sub: email, email, email_verified: true, name: email.split('@')[0] });
+  const result = await signInWithCredential(conn.auth, GoogleAuthProvider.credential(token));
   return toCloudUser(result.user);
 }
 
@@ -154,13 +208,13 @@ export function firestoreBackend(conn: FirebaseConnection): CloudBackend {
       });
     },
 
-    async putScript(uid: string, projectId: string, script: Script, expectedRev: number | null): Promise<PutResult<RemoteScript>> {
+    async putScript(uid: string, projectId: string, script: Script, expectedRev: number | null, recreateAfter = 0): Promise<PutResult<RemoteScript>> {
       const ref = scriptRef(projectId, script.id);
       return runTransaction(db, async (tx) => {
         const snap = await tx.get(ref);
         const current = snap.exists() ? readScript(snap.data()) : null;
         if ((current?.rev ?? null) !== expectedRev) return { ok: false as const, current };
-        const rev = (current?.rev ?? 0) + 1;
+        const rev = (current?.rev ?? recreateAfter) + 1;
         tx.set(ref, {
           body: JSON.stringify({ ...script, projectId }),
           title: script.titlePage.title,

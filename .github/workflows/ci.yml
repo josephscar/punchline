@@ -25,3 +25,30 @@ jobs:
           name: playwright-results
           path: test-results/
           retention-days: 7
+
+  cloud:
+    # Cloud sync against the Firebase Auth and Firestore emulators.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:cloud
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cloud-test-results
+          path: test-results/
+          retention-days: 7

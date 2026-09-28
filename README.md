@@ -1,10 +1,10 @@
 # Punchline
 
-A screenwriting app for **single-camera TV and film**: half-hour single-cam comedies (the format of *The Office*, *Parks and Recreation* and *Abbott Elementary*), one-hour dramas and feature screenplays. It knows the format, so you just write. It remembers your characters and suggests who speaks next, and it lays out your pages the way a production would print them. Projects and saved drafts keep every iteration of a script together.
+A screenwriting app for **single-camera TV and film**: half-hour single-cam comedies (the format of *The Office*, *Parks and Recreation* and *Abbott Elementary*), one-hour dramas and feature screenplays. It knows the format, so you just write. It remembers your characters and suggests who speaks next, and it lays out your pages the way a production would print them. Projects and saved drafts keep every iteration of a script together, and cloud sync keeps your projects on every computer you write on.
 
 ![Punchline editing a single-cam pilot, with the character suggestions open](docs/screenshot.png)
 
-Punchline runs in the browser, works offline and needs no account. Your scripts are stored on your computer.
+Punchline runs in the browser, works offline and needs no account. Your scripts are stored on your computer, and, if you turn on cloud sync, in your own free Firebase project too.
 
 ## Features
 
@@ -41,6 +41,17 @@ Change a script's format any time in **Settings**. Multi-camera sitcom format co
 | **Revision marks** | Choose a draft and every line changed since it gets a `*` in the right margin, in the editor and in the PDF. |
 | **Files** | PDF export (Courier Prime, title page, revision marks). Import and export **Fountain** and **Final Draft (.fdx)**. Copy and paste work as Fountain. **Punchline backups** keep a script with its drafts, or a whole project. |
 
+**Cloud sync**
+
+| | |
+|---|---|
+| **Your own cloud** | Projects, with their scripts and drafts, sync through your own Firebase project on Google's free Spark plan. Sign in with Google on each computer you write on. Scripts outside a project stay on the device. |
+| **Local first** | Writing never waits for the network. Everything is saved on the device first and uploads a few seconds after you stop typing, or when you're back online. |
+| **Nothing lost** | If a script changed on two devices before they synced, both versions are kept: the other one becomes a draft named *From another device*, ready to compare. |
+| **Private** | Security rules let only a project's members read it; today that's just you. Co-writers come in a later version. |
+
+Setting it up takes about ten minutes, once: follow [docs/CLOUD.md](docs/CLOUD.md).
+
 Press **Ctrl/⌘ + /** in the app for the cheat sheet, which covers every shortcut and the format rules.
 
 ## Run it
@@ -56,11 +67,11 @@ The first launch opens a short sample pilot that uses every element. Start your 
 
 To build a static site you can host anywhere, run `npm run build`; the output goes to `dist/`. `npm run build:single` produces a single self-contained `dist-single/index.html` that you can open straight from disk. `npm run build:demo` builds the same file for an online preview where the host blocks downloads; exporting is switched off there and explains why.
 
-To put it online with GitHub Pages, go to **Settings → Pages**, set **Source** to **GitHub Actions**, then run the **Deploy to GitHub Pages** workflow from the Actions tab.
+To put it online with GitHub Pages, go to **Settings → Pages**, set **Source** to **GitHub Actions**, then run the **Deploy to GitHub Pages** workflow from the Actions tab. Cloud sync works in the site build (`npm run build`, and GitHub Pages) but not in the single-file builds, because Google sign-in needs a web address to return to.
 
 ### Where your work is saved
 
-Projects, scripts and drafts are saved automatically to the browser's IndexedDB, on your machine only. Clearing site data deletes them, so back up regularly: **Export → Punchline backup** saves a script with its drafts, and **Library → Back up project** saves a whole project. Importing a backup always adds a copy; it never overwrites. Libraries from version 1 are upgraded in place the first time version 2 opens. If the browser won't allow storage (some private windows), the status bar says so.
+Projects, scripts and drafts are saved automatically to the browser's IndexedDB on your machine, and projects also sync to the cloud if you've set that up. Without cloud sync, clearing site data deletes them, so back up regularly: **Export → Punchline backup** saves a script with its drafts, and **Library → Back up project** saves a whole project. Importing a backup always adds a copy; it never overwrites. Libraries from version 1 are upgraded in place the first time version 2 opens. If the browser won't allow storage (some private windows), the status bar says so.
 
 ## Keyboard
 
@@ -81,6 +92,7 @@ Projects, scripts and drafts are saved automatically to the browser's IndexedDB,
 ```bash
 npm test           # unit tests (Vitest): formats, pagination, diff, import/export, storage
 npm run test:e2e   # browser tests (Playwright + Chromium)
+npm run test:cloud # cloud sync against the Firebase emulators (needs Java 21+)
 npm run typecheck
 ```
 
@@ -98,13 +110,14 @@ src/core/            framework-free TypeScript, fully unit tested
   backup.ts          .punchline files for scripts and projects
   scenes.ts          scene moves
 src/editor/          ProseMirror editor, including plugins for suggestions, page breaks and smart typing
-src/ui/              React app shell: navigator, library, drafts, compare, dialogs
+src/ui/              React app shell: navigator, library, drafts, compare, cloud, dialogs
 src/storage/         local library of projects, scripts and drafts (IndexedDB)
+src/cloud/           cloud sync: sync engine, Firestore backend, sign-in (Firebase loads only once set up)
 ```
 
 A script format is data. [`src/core/formats/`](src/core/formats/) defines every element's indent, width, capitalisation, spacing, page rules, Enter flow, Tab cycle and suggestion vocabulary. The editor's CSS, the paginator and the PDF writer all read it, which is how new formats are added without touching the editor.
 
-See [docs/formats.md](docs/formats.md) for the format reference and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+See [docs/formats.md](docs/formats.md) for the format reference, [docs/CLOUD.md](docs/CLOUD.md) for cloud sync, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
 
 ## Credits
 

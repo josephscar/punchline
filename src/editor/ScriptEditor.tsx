@@ -42,6 +42,8 @@ export interface ScriptEditorHandle {
 interface Props {
   /** Changing this key loads `initialElements` as a fresh document. */
   docKey: string;
+  /** Changing this reloads `initialElements` for the same script (e.g. after it changed on another device). */
+  reloadToken?: number;
   initialElements: ScriptElement[];
   format: ScriptFormat;
   settings: ScriptSettings;
@@ -50,6 +52,8 @@ interface Props {
   memory: Record<string, number>;
   /** Called (debounced) with the document and the `docKey` it belongs to. */
   onChange: (elements: ScriptElement[], docKey: string) => void;
+  /** Called straight away on every edit, before the debounced onChange. */
+  onEdit?: () => void;
   onLayout: (layout: ScriptLayout) => void;
   onCursor: (cursor: CursorInfo) => void;
   /** Extra shortcuts handled by the app (save, export…). */
@@ -81,7 +85,7 @@ function sliceToText(slice: Slice, format: ScriptFormat): string {
 export type Shortcut = 'save' | 'print' | 'help';
 
 export function ScriptEditor(props: Props) {
-  const { docKey, initialElements, format, settings, baseline, memory, ref } = props;
+  const { docKey, reloadToken, initialElements, format, settings, baseline, memory, ref } = props;
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Plugins read live values through refs so they never need rebuilding.
@@ -90,6 +94,7 @@ export function ScriptEditor(props: Props) {
 
   const css = useMemo(() => formatCss(format), [format]);
   const loadedKey = useRef(docKey);
+  const loadedToken = useRef(reloadToken);
 
   const createState = (elements: ScriptElement[]) => {
     const getFormat = () => live.current.format;
@@ -169,6 +174,7 @@ export function ScriptEditor(props: Props) {
         const state = view.state.apply(tr);
         view.updateState(state);
         if (tr.docChanged) {
+          live.current.props.onEdit?.();
           window.clearTimeout(changeTimer);
           const key = loadedKey.current;
           changeTimer = window.setTimeout(() => {
@@ -194,15 +200,21 @@ export function ScriptEditor(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load a different script.
+  // Load a different script, or reload this one.
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || loadedKey.current === docKey) return;
+    if (!view || (loadedKey.current === docKey && loadedToken.current === reloadToken)) return;
+    const reloading = loadedKey.current === docKey;
+    const at = view.state.selection.from;
     loadedKey.current = docKey;
+    loadedToken.current = reloadToken;
     view.updateState(createState(initialElements));
-    view.dispatch(view.state.tr.setMeta(layoutKey, REFRESH_LAYOUT));
+    // Reloading the same script keeps the cursor about where it was.
+    const tr = view.state.tr.setMeta(layoutKey, REFRESH_LAYOUT);
+    if (reloading) tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(at, tr.doc.content.size))));
+    view.dispatch(tr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docKey]);
+  }, [docKey, reloadToken]);
 
   // Re-run layout when settings, format or the revision baseline change.
   useEffect(() => {

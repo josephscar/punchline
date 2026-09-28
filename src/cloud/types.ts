@@ -52,7 +52,12 @@ export interface CloudBackend {
 
   /** Create (expectedRev null) or update (expectedRev = last rev seen). Fails with the current version on a mismatch. */
   putProject(uid: string, project: Project, expectedRev: number | null): Promise<PutResult<RemoteProject>>;
-  putScript(uid: string, projectId: string, script: Script, expectedRev: number | null): Promise<PutResult<RemoteScript>>;
+  /**
+   * Like putProject. `recreateAfter`: when putting back a script that was
+   * deleted from the cloud, continue numbering after the revision this device
+   * last had, so revisions never go backwards for devices that still have it.
+   */
+  putScript(uid: string, projectId: string, script: Script, expectedRev: number | null, recreateAfter?: number): Promise<PutResult<RemoteScript>>;
   putDraft(uid: string, projectId: string, draft: Draft): Promise<number>;
 
   /** Deletes the project and everything in it. */

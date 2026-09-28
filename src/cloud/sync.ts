@@ -47,6 +47,8 @@ export interface SyncOptions {
   retryDelay: number;
   /** How often to retry applying cloud changes to a script that is being edited. */
   deferDelay: number;
+  /** Wait this long before listening again after the cloud stopped a listener (e.g. rules not published yet). */
+  relistenDelay: number;
 }
 
 const ORDER: Record<SyncMeta['type'], number> = { project: 0, script: 1, draft: 2 };
@@ -76,6 +78,11 @@ export class SyncEngine {
   private removalTimer: ReturnType<typeof setTimeout> | null = null;
   private retryDelay: number;
   private running = false;
+  /** The server has listed this account's projects, so the security rules let us in. */
+  private projectsListed = false;
+  /** Projects on this device that belong to another account's cloud (signed in with a different account before). */
+  private foreign = new Set<string>();
+  private relistenTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Records this device uploaded that no listing has shown yet. A listing can
    * be older than an upload that has already finished (it was computed on the
@@ -83,6 +90,8 @@ export class SyncEngine {
    * only treated as deleted once a listing has shown it.
    */
   private unconfirmed = new Map<string, { projectId: string; rev: number }>();
+  /** Hashes of cloud scripts already seen, so unchanged ones aren't re-hashed for every listing. */
+  private remoteHashes = new Map<string, string>();
   private status: SyncStatus = 'connecting';
   private readonly options: SyncOptions;
 
@@ -93,7 +102,7 @@ export class SyncEngine {
     private hooks: SyncHooks,
     options: Partial<SyncOptions> = {},
   ) {
-    this.options = { pushDelay: 3000, retryDelay: 2000, deferDelay: 2000, ...options };
+    this.options = { pushDelay: 3000, retryDelay: 2000, deferDelay: 2000, relistenDelay: 30_000, ...options };
     this.retryDelay = this.options.retryDelay;
   }
 
@@ -104,14 +113,33 @@ export class SyncEngine {
     this.setStatus('connecting');
     // Anything changed while signed out or offline gets checked for upload.
     await this.queueEverything();
+    this.listen();
+    this.schedule(0);
+  }
+
+  private listen() {
     this.unsubs.push(
       this.cloud.watchProjects(
         this.user.uid,
         (listing) => this.fromCloud(() => this.onProjects(listing)),
-        (e) => this.onError(e),
+        (e) => this.onListenError(e),
       ),
     );
-    this.schedule(0);
+  }
+
+  /** The cloud stopped the projects listener: say so, and try again in a while. */
+  private onListenError(e: unknown) {
+    this.onError(e);
+    if (!this.running || this.relistenTimer) return;
+    this.relistenTimer = setTimeout(() => {
+      this.relistenTimer = null;
+      if (!this.running) return;
+      for (const u of this.unsubs) u();
+      for (const us of this.watching.values()) us.forEach((u) => u());
+      this.unsubs = [];
+      this.watching.clear();
+      this.listen();
+    }, this.options.relistenDelay);
   }
 
   stop(): void {
@@ -123,8 +151,10 @@ export class SyncEngine {
     if (this.timer) clearTimeout(this.timer);
     if (this.deferTimer) clearTimeout(this.deferTimer);
     if (this.removalTimer) clearTimeout(this.removalTimer);
+    if (this.relistenTimer) clearTimeout(this.relistenTimer);
     this.deferTimer = null;
     this.removalTimer = null;
+    this.relistenTimer = null;
   }
 
   /** Local records changed (called by SyncedLibrary). */
@@ -241,6 +271,7 @@ export class SyncEngine {
     }
     this.retryDelay = this.options.retryDelay;
     if (this.queue.size) this.schedule(this.options.pushDelay);
+    else if (this.relistenTimer) this.setStatus('error', 'Couldn’t read your projects from the cloud. Trying again shortly.');
     else this.setStatus('synced');
   }
 
@@ -269,16 +300,24 @@ export class SyncEngine {
       return;
     }
     const hash = hashProject(project);
-    if (meta && meta.hash === hash) return;
-    let res = await this.cloud.putProject(this.user.uid, project, meta?.rev ?? null);
-    if (!res.ok) {
-      // Deleted in the cloud while we had it: the listener will take it out of here.
-      if (!res.current) return;
-      // Renamed elsewhere too: a title is small, so this device's wins.
-      res = await this.cloud.putProject(this.user.uid, project, res.current.rev);
-      if (!res.ok) throw new Error('The project changed again while syncing.');
+    if ((meta && meta.hash === hash) || this.foreign.has(id)) return;
+    try {
+      let res = await this.cloud.putProject(this.user.uid, project, meta?.rev ?? null);
+      if (!res.ok) {
+        // Deleted in the cloud while we had it: the listener will take it out of here.
+        if (!res.current) return;
+        // Renamed elsewhere too: a title is small, so this device's wins.
+        res = await this.cloud.putProject(this.user.uid, project, res.current.rev);
+        if (!res.ok) throw new Error('The project changed again while syncing.');
+      }
+      await this.saveMeta({ key: metaKey('project', id), type: 'project', id, projectId: id, rev: res.rev, hash }, true);
+    } catch (e) {
+      // We can list our own projects but not touch this one: it's in another
+      // account's cloud. Leave it (and what's in it) on this device only.
+      if ((e as { code?: string })?.code !== 'permission-denied' || !this.projectsListed) throw e;
+      this.foreign.add(id);
+      this.hooks.onNotice(`“${project.title}” is in the cloud of a different account, so it stays on this device while you’re signed in as ${this.user.email || this.user.name}.`);
     }
-    await this.saveMeta({ key: metaKey('project', id), type: 'project', id, projectId: id, rev: res.rev, hash }, true);
   }
 
   /** Remove a script's old cloud copy (and its drafts') after it left that project. */
@@ -319,17 +358,28 @@ export class SyncEngine {
     let res = await this.cloud.putScript(this.user.uid, projectId, script, meta?.rev ?? null);
     if (!res.ok) {
       const current = res.current;
-      if (current && hashScript(current.script) === hash) {
+      if (current && this.remoteHash(current) === hash) {
         // Same words on both sides; just catch up with the revision.
         await this.saveMeta({ key: metaKey('script', id), type: 'script', id, projectId, rev: current.rev, hash }, true);
         return;
       }
       // Changed both here and elsewhere: keep ours, save theirs as a draft.
       if (current) await this.keepAsDraft(script, current.script);
-      res = await this.cloud.putScript(this.user.uid, projectId, script, current ? current.rev : null);
+      res = await this.cloud.putScript(this.user.uid, projectId, script, current ? current.rev : null, meta?.rev);
       if (!res.ok) throw new Error('The script changed again while syncing.');
     }
     await this.saveMeta({ key: metaKey('script', id), type: 'script', id, projectId, rev: res.rev, hash }, true);
+  }
+
+  private remoteHash(remote: RemoteScript) {
+    const key = `${remote.script.id}@${remote.rev}@${remote.script.updatedAt}`;
+    let hash = this.remoteHashes.get(key);
+    if (!hash) {
+      if (this.remoteHashes.size > 5000) this.remoteHashes.clear();
+      hash = hashScript(remote.script);
+      this.remoteHashes.set(key, hash);
+    }
+    return hash;
   }
 
   private isDirty(script: Script, meta: SyncMeta) {
@@ -376,7 +426,12 @@ export class SyncEngine {
 
   private watchProject(projectId: string) {
     if (this.watching.has(projectId)) return;
-    const onError = (e: unknown) => this.onError(e);
+    const onError = (e: unknown) => {
+      // Refused when the project was just deleted or we were taken out of it;
+      // the projects listing sorts that out. Listen again if it's still listed.
+      if ((e as { code?: string })?.code === 'permission-denied') this.unwatchProject(projectId);
+      else this.onError(e);
+    };
     this.watching.set(projectId, [
       this.cloud.watchScripts(
         projectId,
@@ -435,7 +490,8 @@ export class SyncEngine {
           changed = true;
         }
       }
-      if (this.status === 'connecting') this.setStatus('synced');
+      this.projectsListed = true;
+      if (this.status === 'connecting' || (this.status === 'error' && !this.queue.size)) this.setStatus('synced');
     }
     if (this.queue.size) this.schedule(this.options.pushDelay);
     if (changed) this.hooks.onRemoteChange({ projects: true });
@@ -477,10 +533,11 @@ export class SyncEngine {
         await this.applyRemoteScript(projectId, remote);
         continue;
       }
+      const remoteHash = this.remoteHash(remote);
       // Already have this revision, or a newer one (the listing is an old snapshot).
-      if (meta && meta.projectId === projectId && remote.rev <= meta.rev) continue;
+      // (Same revision with other words: it was deleted and put back meanwhile.)
+      if (meta && meta.projectId === projectId && (remote.rev < meta.rev || (remote.rev === meta.rev && remoteHash === meta.hash))) continue;
       const localHash = hashScript(local);
-      const remoteHash = hashScript(remote.script);
       const unchangedHere = meta ? localHash === meta.hash : localHash === remoteHash;
       if (meta && meta.projectId !== projectId && local.projectId === meta.projectId && unchangedHere) {
         // Moved to this project on another device.
@@ -524,10 +581,16 @@ export class SyncEngine {
     for (const [id, { projectId, rev }] of pending) {
       const meta = await this.lib.getSyncMeta(metaKey('script', id));
       // Moved, re-uploaded or already handled since.
-      if (!meta || meta.deleted || meta.projectId !== projectId || meta.rev !== rev) continue;
+      if (!meta || meta.deleted || meta.projectId !== projectId || meta.rev !== rev || this.unconfirmed.has(meta.key)) continue;
       const local = await this.lib.load(id);
       if (local && local.projectId === projectId && this.isDirty(local, meta)) {
         this.queue.add(meta.key); // deleted elsewhere but edited here: upload it again
+        continue;
+      }
+      if (local && local.projectId === projectId && !this.hooks.canApply(id)) {
+        // Open and being typed in: decide once typing pauses (and the edits are saved).
+        this.removals.set(id, { projectId, rev });
+        this.scheduleRemovals();
         continue;
       }
       await this.lib.deleteSyncMeta(meta.key);

@@ -9,8 +9,7 @@ import type { CloudUser, SyncStatus } from './types';
 const USER: CloudUser = { uid: 'user-1', name: 'Sam', email: 'sam@example.com', photoUrl: null };
 
 /** One device: its own local library and sync engine, sharing the cloud. */
-function device(cloud: FakeCloud, user = USER) {
-  const base = memoryLibrary();
+function device(cloud: FakeCloud, user = USER, base = memoryLibrary()) {
   const lib = new SyncedLibrary(base);
   const d = {
     base,
@@ -31,7 +30,7 @@ function device(cloud: FakeCloud, user = USER) {
           onNotice: (m) => d.notices.push(m),
           canApply: (id) => !d.busy.has(id),
         },
-        { pushDelay: 0, retryDelay: 5, deferDelay: 5 },
+        { pushDelay: 0, retryDelay: 5, deferDelay: 5, relistenDelay: 20 },
       );
       lib.engine = d.engine;
       await d.engine.start();
@@ -158,6 +157,27 @@ describe('cloud sync', () => {
     expect(text(await b.lib.load(pilot.id))).toBe('INT. OFFICE - DAY | Changed while B types.');
   });
 
+  it('waits while a script is being edited before deleting it because of another device', async () => {
+    const cloud = new FakeCloud();
+    const a = device(cloud);
+    const b = device(cloud);
+    const { pilot } = await seed(a);
+    await a.start();
+    await b.start();
+    await settle(a, b);
+    b.busy.add(pilot.id);
+    await a.lib.remove(pilot.id);
+    await settle(a, b);
+    expect(await b.lib.load(pilot.id)).toBeDefined();
+    // B typed something before pausing: B's pages go back up rather than disappearing.
+    await edit(b, pilot.id, 'Still writing this.');
+    b.busy.clear();
+    await settle(a, b);
+    expect(text(await b.lib.load(pilot.id))).toBe('INT. OFFICE - DAY | Still writing this.');
+    expect(text(cloud.scripts.get(pilot.projectId!)?.get(pilot.id)?.script)).toBe('INT. OFFICE - DAY | Still writing this.');
+    expect(text(await a.lib.load(pilot.id))).toBe('INT. OFFICE - DAY | Still writing this.');
+  });
+
   it('deletes scripts and drafts everywhere', async () => {
     const cloud = new FakeCloud();
     const a = device(cloud);
@@ -272,6 +292,42 @@ describe('cloud sync', () => {
     await settle(a);
     expect((await a.lib.listProjects()).map((p) => p.id)).toEqual([project.id]);
     expect(await a.lib.load(pilot.id)).toBeDefined();
+  });
+
+  it('leaves projects from another account on the device without blocking the rest', async () => {
+    const cloud = new FakeCloud();
+    const a = device(cloud);
+    const { project } = await seed(a);
+    await a.start();
+    await settle(a);
+    a.stop();
+    // Signed in as someone else on the same device: sync starts afresh.
+    for (const m of await a.base.allSyncMeta()) await a.base.deleteSyncMeta(m.key);
+    const other: CloudUser = { uid: 'user-2', name: 'Alex', email: 'alex@example.com', photoUrl: null };
+    const b = device(cloud, other, a.base);
+    await b.start();
+    const mine = createProject('Alex’s Show');
+    await b.lib.saveProject(mine);
+    await settle(b);
+    expect(b.status).toBe('synced');
+    expect(cloud.projects.get(mine.id)?.memberIds).toEqual([other.uid]);
+    expect(cloud.projects.get(project.id)?.memberIds).toEqual([USER.uid]);
+    expect(b.notices).toEqual([expect.stringMatching(/Paper Trail” is in the cloud of a different account/)]);
+    expect((await b.lib.listProjects()).map((p) => p.title).sort()).toEqual(['Alex’s Show', 'Paper Trail']);
+  });
+
+  it('keeps trying when the cloud refuses to list projects (security rules not published yet)', async () => {
+    const cloud = new FakeCloud();
+    cloud.denyListing = true;
+    const a = device(cloud);
+    await seed(a);
+    await a.start();
+    await settle(a);
+    expect(a.status).toBe('error');
+    cloud.denyListing = false;
+    await new Promise((r) => setTimeout(r, 40));
+    await settle(a);
+    expect(a.status).toBe('synced');
   });
 
   it('uploads work done while signed out', async () => {

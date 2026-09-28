@@ -29,6 +29,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Optional: your Firebase web config, so this site is ready to sign in
+          # without pasting it. Add it under Settings → Secrets and variables →
+          # Actions → Variables as FIREBASE_CONFIG. See docs/CLOUD.md.
+          VITE_FIREBASE_CONFIG: ${{ vars.FIREBASE_CONFIG }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

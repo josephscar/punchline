@@ -23,6 +23,8 @@ interface Props {
   currentId: string | null;
   currentProjectId: string | null;
   persistent: boolean;
+  /** Signed in to cloud sync: projects are in the cloud, other scripts only on this device. */
+  synced: boolean;
   formats: ScriptFormat[];
   onOpen: (id: string) => void;
   onNew: (options: { formatId: string; blank: boolean; projectId: string | null }) => void;
@@ -38,7 +40,7 @@ interface Props {
 }
 
 export function LibraryDialog(props: Props) {
-  const { scripts, projects, formats } = props;
+  const { scripts, projects, formats, synced } = props;
   const [folder, setFolder] = useState<Folder>('all');
   const [confirm, setConfirm] = useState<string | null>(null);
   const [newProject, setNewProject] = useState<{ title: string; formatId: string } | null>(null);
@@ -61,9 +63,14 @@ export function LibraryDialog(props: Props) {
   // Put the project's own format first on the "New" cards.
   const orderedFormats = project ? [...formats].sort((a, b) => Number(b.id === project.formatId) - Number(a.id === project.formatId)) : formats;
 
-  const folderButton = (f: Folder, label: string) => (
+  const folderButton = (f: Folder, label: string, cloud = false) => (
     <button className={`lib-folder${folder === f ? ' is-active' : ''}`} onClick={() => setFolder(f)} aria-current={folder === f ? 'true' : undefined}>
       <span className="lib-folder-name">{label}</span>
+      {cloud && (
+        <span className="lib-cloud" title="Synced to the cloud" aria-label="synced">
+          {icons.cloud()}
+        </span>
+      )}
       <span className="lib-folder-count">{count(f)}</span>
     </button>
   );
@@ -83,7 +90,7 @@ export function LibraryDialog(props: Props) {
           {folderButton('all', 'All scripts')}
           <h3 className="section-title">Projects</h3>
           {projects.map((p) => (
-            <div key={p.id}>{folderButton(p.id, p.title)}</div>
+            <div key={p.id}>{folderButton(p.id, p.title, synced)}</div>
           ))}
           {projects.length === 0 && <p className="nav-hint">Group a series’ episodes, or a film’s drafts, into a project.</p>}
           {newProject ? (
@@ -156,7 +163,7 @@ export function LibraryDialog(props: Props) {
                 </button>
                 {confirm === `project-${project.id}` ? (
                   <span className="confirm">
-                    Delete the project? Its scripts are kept.
+                    {synced ? 'Delete the project here and in the cloud? Its scripts are kept on each device, outside any project.' : 'Delete the project? Its scripts are kept.'}
                     <button
                       className="btn btn-danger small"
                       onClick={() => {
@@ -198,6 +205,9 @@ export function LibraryDialog(props: Props) {
               <span className="new-card-desc">Fountain, Final Draft (.fdx) or a Punchline backup.</span>
             </button>
           </div>
+          {synced && folder === 'unfiled' && (
+            <p className="lib-note">{icons.device()} Scripts outside a project stay on this device. Move one into a project to sync it.</p>
+          )}
           {!props.persistent && (
             <p className="warning">This browser isn’t letting Punchline save between visits. Export your work (Export → Punchline backup) before closing the tab.</p>
           )}
@@ -215,6 +225,7 @@ export function LibraryDialog(props: Props) {
                         s.id === props.currentId ? 'Open now' : null,
                         formatName(s.formatId),
                         folder === 'all' && s.projectId ? projectName(s.projectId) : null,
+                        synced && !s.projectId ? 'this device only' : null,
                         s.drafts ? `${s.drafts} ${s.drafts === 1 ? 'draft' : 'drafts'}` : null,
                         `edited ${timeAgo(s.updatedAt)}`,
                       ]
@@ -222,9 +233,25 @@ export function LibraryDialog(props: Props) {
                         .join(' · ')}
                     </span>
                   </button>
-                  {confirm === s.id ? (
+                  {confirm === `unfile-${s.id}` ? (
                     <span className="confirm">
-                      Delete it and its drafts?
+                      Take it out of the project? It leaves the cloud and your other devices, and stays only here.
+                      <button
+                        className="btn btn-danger small"
+                        onClick={() => {
+                          props.onMove(s.id, null);
+                          setConfirm(null);
+                        }}
+                      >
+                        Move
+                      </button>
+                      <button className="btn btn-quiet small" onClick={() => setConfirm(null)}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : confirm === s.id ? (
+                    <span className="confirm">
+                      {synced && s.projectId ? 'Delete it and its drafts on all your devices?' : 'Delete it and its drafts?'}
                       <button className="btn btn-danger small" onClick={() => props.onDelete(s.id)}>
                         Delete
                       </button>
@@ -239,7 +266,11 @@ export function LibraryDialog(props: Props) {
                         aria-label={`Project for ${s.title}`}
                         title="Move to project"
                         value={s.projectId ?? ''}
-                        onChange={(e) => props.onMove(s.id, e.target.value || null)}
+                        onChange={(e) => {
+                          const to = e.target.value || null;
+                          if (synced && s.projectId && !to) setConfirm(`unfile-${s.id}`);
+                          else props.onMove(s.id, to);
+                        }}
                       >
                         <option value="">No project</option>
                         {projects.map((p) => (

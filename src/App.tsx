@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CloudController, type CloudView } from './cloud/controller';
+import { SyncedLibrary, type SyncHooks } from './cloud/sync';
 import { analyzeScript, characterName } from './core/analysis';
 import { nextInCycle } from './core/flow';
 import { FORMATS, getFormat } from './core/formats';
@@ -25,6 +27,7 @@ import {
 } from './core/types';
 import { ScriptEditor, type CursorInfo, type ScriptEditorHandle, type Shortcut } from './editor/ScriptEditor';
 import { openLibrary, type Library, type ScriptSummary } from './storage/library';
+import { CloudButton, CloudDialog } from './ui/CloudDialog';
 import { CompareDialog, type Version } from './ui/CompareDialog';
 import { RenameDialog, SettingsDialog, TitlePageDialog } from './ui/Dialogs';
 import { DraftsPanel, formatDate } from './ui/DraftsPanel';
@@ -34,11 +37,13 @@ import { icons } from './ui/icons';
 import { LibraryDialog } from './ui/LibraryDialog';
 import { Sidebar, type SidebarTab } from './ui/Sidebar';
 
-type DialogName = 'library' | 'title' | 'settings' | 'help' | null;
+type DialogName = 'library' | 'title' | 'settings' | 'help' | 'cloud' | null;
 type SaveState = 'saved' | 'saving' | 'error';
 type Theme = 'system' | 'light' | 'dark';
 
 const SAVE_DELAY = 500;
+/** Changes from another device wait until the open script has had no edits for this long. */
+const QUIET_BEFORE_APPLYING = 3000;
 
 // A host page (e.g. an embedding viewer) may already set the theme; "System" defers to it.
 const hostTheme = typeof document === 'undefined' ? undefined : document.documentElement.dataset.theme;
@@ -71,17 +76,23 @@ export function App() {
   const [theme, setTheme] = useState<Theme>('system');
   const [toast, setToast] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [cloud, setCloud] = useState<CloudView | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const editorRef = useRef<ScriptEditorHandle>(null);
   const scriptRef = useRef<Script | null>(null);
   scriptRef.current = script;
   const dirty = useRef(false);
+  const lastEdit = useRef(0);
+  const libraryRef = useRef<Library | null>(null);
+  libraryRef.current = library;
+  const cloudRef = useRef<CloudController | null>(null);
 
   const format = useMemo(() => getFormat(script?.formatId), [script?.formatId]);
 
-  const notify = useCallback((message: string) => {
+  const notify = useCallback((message: string, duration = 3200) => {
     setToast(message);
-    window.setTimeout(() => setToast((t) => (t === message ? null : t)), 3200);
+    window.setTimeout(() => setToast((t) => (t === message ? null : t)), duration);
   }, []);
 
   // ---- Startup: open the library and the last script (or the sample). ----
@@ -92,7 +103,8 @@ export function App() {
     started.current = true;
     (async () => {
       try {
-        const lib = await openLibrary();
+        // Writes go through SyncedLibrary so cloud sync hears about them once it's on.
+        const lib = new SyncedLibrary(await openLibrary());
         let current: Script | undefined;
         const lastId = await lib.getPref<string>('lastScriptId');
         if (lastId) current = await lib.load(lastId);
@@ -112,6 +124,16 @@ export function App() {
         setDrafts(await lib.listDrafts(current.id));
         setOtherMemory(await lib.memory({ projectId: current.projectId, excludeId: current.id }));
         await lib.setPref('lastScriptId', current.id);
+        if (__CLOUD__) {
+          const hooks: Omit<SyncHooks, 'onStatus'> = {
+            onRemoteChange: (change) => void cloudHooks.current.onRemoteChange(change),
+            onNotice: (message) => cloudHooks.current.onNotice(message),
+            canApply: (id) => cloudHooks.current.canApply(id),
+          };
+          const controller = new CloudController(lib, hooks, setCloud);
+          cloudRef.current = controller;
+          await controller.init();
+        }
       } catch (e) {
         setLoadError(e instanceof Error ? e.message : String(e));
       }
@@ -178,6 +200,10 @@ export function App() {
     },
     [update],
   );
+
+  const markEdited = useCallback(() => {
+    lastEdit.current = Date.now();
+  }, []);
 
   const handleCursor = useCallback((c: CursorInfo) => {
     setCursor((prev) =>
@@ -377,20 +403,71 @@ export function App() {
     notify('Duplicated');
   };
 
+  /** The open script is gone: open another one from the same project (or a new one). */
+  const openInstead = async (gone: Script) => {
+    if (!library) return;
+    const list = await library.list();
+    setSummaries(list);
+    dirty.current = false;
+    const sameProject = list.find((s) => s.projectId === gone.projectId) ?? list[0];
+    const next = sameProject ? await library.load(sameProject.id) : undefined;
+    const fallback = next ?? createScript({ projectId: gone.projectId, formatId: gone.formatId });
+    if (!next) await library.save(fallback);
+    await switchTo(fallback);
+  };
+
   const remove = async (id: string) => {
     if (!library) return;
     await library.remove(id);
-    const list = await library.list();
-    setSummaries(list);
+    setSummaries(await library.list());
     if (id === script?.id) {
-      dirty.current = false;
-      const sameProject = list.find((s) => s.projectId === script.projectId) ?? list[0];
-      const next = sameProject ? await library.load(sameProject.id) : undefined;
-      const fallback = next ?? createScript({ projectId: script.projectId, formatId: script.formatId });
-      if (!next) await library.save(fallback);
-      await switchTo(fallback);
+      await openInstead(script);
       setDialog('library');
     }
+  };
+
+  // ---- Cloud sync. ----
+  /** Something changed because of another device: refresh what's on screen. */
+  const onRemoteChange = async (change: { projects?: boolean; scripts?: string[]; drafts?: string[] }) => {
+    const lib = libraryRef.current;
+    const current = scriptRef.current;
+    if (!lib) return;
+    if (change.projects) setProjects(await lib.listProjects());
+    setSummaries(await lib.list());
+    if (!current) return;
+    if (change.scripts?.includes(current.id) || change.projects) {
+      const fresh = await lib.load(current.id);
+      if (!fresh) {
+        notify(`“${displayTitle(current)}” was deleted on another device.`, 6000);
+        await openInstead(current);
+        return;
+      }
+      if (change.scripts?.includes(current.id)) {
+        if (dirty.current || Date.now() - lastEdit.current < QUIET_BEFORE_APPLYING) {
+          // Typed into it in the moment it arrived: keep those pages, and the other device's as a draft.
+          await lib.saveDraft(
+            createDraft(fresh, { name: 'From another device', note: 'Arrived while you were typing, so your pages were kept.' }),
+          );
+          dirty.current = true;
+          update((s) => s);
+          change = { ...change, drafts: [...(change.drafts ?? []), current.id] };
+        } else {
+          setScript(fresh);
+          setReloadToken((t) => t + 1);
+        }
+      } else if (fresh.projectId !== current.projectId) {
+        // Its project was deleted on another device; the script stays here.
+        setScript((s) => (s ? { ...s, projectId: fresh.projectId } : s));
+      }
+    }
+    if (change.drafts?.includes(current.id)) setDrafts(await lib.listDrafts(current.id));
+  };
+
+  const cloudHooks = useRef<Omit<SyncHooks, 'onStatus'>>(null!);
+  cloudHooks.current = {
+    onRemoteChange: (change) => void onRemoteChange(change),
+    onNotice: (message) => notify(message, 8000),
+    canApply: (id) => scriptRef.current?.id !== id || (!dirty.current && Date.now() - lastEdit.current > QUIET_BEFORE_APPLYING),
   };
 
   // ---- Export. ----
@@ -655,6 +732,7 @@ export function App() {
             {icons.pdf()}
             <span className="hide-sm">PDF</span>
           </button>
+          {cloud && <CloudButton view={cloud} onClick={() => setDialog('cloud')} />}
           <button className="icon-btn" onClick={() => setDialog('settings')} aria-label="Settings" title="Settings">
             {icons.settings()}
           </button>
@@ -704,12 +782,14 @@ export function App() {
           <ScriptEditor
             ref={editorRef}
             docKey={script.id}
+            reloadToken={reloadToken}
             initialElements={script.elements}
             format={format}
             settings={script.settings}
             baseline={baseline}
             memory={memory}
             onChange={handleChange}
+            onEdit={markEdited}
             onLayout={setLayout}
             onCursor={handleCursor}
             onShortcut={handleShortcut}
@@ -760,6 +840,7 @@ export function App() {
         currentId={script.id}
         currentProjectId={script.projectId}
         persistent={library.persistent}
+        synced={cloud?.state.phase === 'signed-in'}
         formats={FORMATS}
         onOpen={openScript}
         onNew={newScript}
@@ -794,6 +875,22 @@ export function App() {
         onClose={() => setDialog(null)}
       />
       <HelpDialog open={dialog === 'help'} format={format} onClose={() => setDialog(null)} />
+      {cloud && (
+        <CloudDialog
+          open={dialog === 'cloud'}
+          view={cloud}
+          counts={{ projects: projects.length, localScripts: summaries.filter((s) => !s.projectId).length }}
+          onSignIn={(email) => cloudRef.current!.signIn(email)}
+          onSignOut={() => cloudRef.current!.signOut()}
+          onSyncNow={async () => {
+            await saveNow();
+            await cloudRef.current!.syncNow();
+          }}
+          onSaveConfig={(text) => cloudRef.current!.saveConfig(text)}
+          onForgetConfig={() => cloudRef.current!.forgetConfig()}
+          onClose={() => setDialog(null)}
+        />
+      )}
       <RenameDialog name={renaming} onRename={renameCharacter} onClose={() => setRenaming(null)} />
       {toast && (
         <div className="toast" role="status">

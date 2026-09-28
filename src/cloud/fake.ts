@@ -17,6 +17,8 @@ export class FakeCloud implements CloudBackend {
   offline = false;
   /** While true listings come from a (empty) cache instead of the server. */
   cacheOnly = false;
+  /** While true the projects listener is refused, as when the security rules aren't published. */
+  denyListing = false;
   /**
    * Listings reach watchers this many milliseconds after the change they
    * show, like a real listener that lags behind writes that have already
@@ -55,7 +57,11 @@ export class FakeCloud implements CloudBackend {
     return { items: Array.from(this.projects.values()).filter((p) => p.memberIds.includes(uid)).map((x) => structuredClone(x)), fromServer: true };
   }
 
-  watchProjects(uid: string, onChange: (l: Listing<RemoteProject>) => void): Unsubscribe {
+  watchProjects(uid: string, onChange: (l: Listing<RemoteProject>) => void, onError: (e: unknown) => void): Unsubscribe {
+    if (this.denyListing) {
+      queueMicrotask(() => onError(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })));
+      return () => undefined;
+    }
     const w = { onChange };
     this.projectWatchers.set(w, uid);
     this.deliver(this.projectWatchers, w, this.projectListing(uid));
@@ -79,8 +85,9 @@ export class FakeCloud implements CloudBackend {
   async putProject(uid: string, project: Project, expectedRev: number | null): Promise<PutResult<RemoteProject>> {
     this.check();
     const current = this.projects.get(project.id) ?? null;
-    if ((current?.rev ?? null) !== expectedRev) return { ok: false, current: current ? structuredClone(current) : null };
+    // Like the security rules: someone else's project can't even be read.
     if (current && !current.memberIds.includes(uid)) throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+    if ((current?.rev ?? null) !== expectedRev) return { ok: false, current: current ? structuredClone(current) : null };
     const rev = (current?.rev ?? 0) + 1;
     this.projects.set(project.id, {
       project: structuredClone(project),
@@ -93,14 +100,14 @@ export class FakeCloud implements CloudBackend {
     return { ok: true, rev };
   }
 
-  async putScript(uid: string, projectId: string, script: Script, expectedRev: number | null): Promise<PutResult<RemoteScript>> {
+  async putScript(uid: string, projectId: string, script: Script, expectedRev: number | null, recreateAfter = 0): Promise<PutResult<RemoteScript>> {
     this.check();
     this.assertMember(uid, projectId);
     const col = this.scripts.get(projectId) ?? new Map<string, RemoteScript>();
     this.scripts.set(projectId, col);
     const current = col.get(script.id) ?? null;
     if ((current?.rev ?? null) !== expectedRev) return { ok: false, current: current ? structuredClone(current) : null };
-    const rev = (current?.rev ?? 0) + 1;
+    const rev = (current?.rev ?? recreateAfter) + 1;
     col.set(script.id, { script: structuredClone({ ...script, projectId }), rev });
     this.writes++;
     this.notify();

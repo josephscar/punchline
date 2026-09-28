@@ -6,11 +6,12 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 // `npm run build:single` → one self-contained HTML file in dist-single/.
 // `npm run build:demo` → the same single file, flagged as an online preview
 //   where the host page blocks downloads (dist-demo/).
+// Cloud sync needs a web address to sign in from, so it's only in the site build.
 export default defineConfig(({ mode }) => {
   const singleFile = mode === 'single' || mode === 'demo';
   return {
   base: './',
-  define: { __DEMO__: JSON.stringify(mode === 'demo') },
+  define: { __DEMO__: JSON.stringify(mode === 'demo'), __CLOUD__: JSON.stringify(!singleFile) },
   plugins: singleFile ? [react(), viteSingleFile()] : [react()],
   build: {
     outDir: mode === 'demo' ? 'dist-demo' : singleFile ? 'dist-single' : 'dist',
