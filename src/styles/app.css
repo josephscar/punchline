@@ -276,8 +276,9 @@ code {
 .topbar-right {
   flex: 0 0 auto;
 }
+/* Only the title area gives way when the bar is short of room. */
 .topbar-tools {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 .brand {
   font-family: var(--script-font);
@@ -1287,7 +1288,7 @@ code {
 }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 1180px) {
+@media (max-width: 1280px) {
   .hide-md {
     display: none;
   }
@@ -1322,10 +1323,8 @@ code {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 720px) {
-  .hide-sm {
-    display: none;
-  }
+/* Too narrow for one row: the formatting tools move to a second row. */
+@media (max-width: 1000px) {
   .topbar {
     flex-wrap: wrap;
     padding: 6px 16px;
@@ -1333,6 +1332,19 @@ code {
   .topbar-tools {
     order: 3;
     flex-basis: 100%;
+  }
+  /* The title shortens rather than pushing the buttons onto their own row. */
+  .topbar-left {
+    flex-basis: 0;
+  }
+}
+@media (max-width: 720px) {
+  .hide-sm {
+    display: none;
+  }
+  /* On phones the title gets a row of its own so it stays readable. */
+  .topbar-left {
+    flex-basis: auto;
   }
   .element-picker,
   .element-picker select {
@@ -1504,4 +1516,20 @@ code {
 }
 .modal-body a {
   color: var(--accent);
+}
+.cloud-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+.cloud-confirm code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
 }

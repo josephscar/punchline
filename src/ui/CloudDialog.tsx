@@ -99,26 +99,28 @@ export function CloudDialog(props: Props) {
     </button>
   );
 
-  const differentProject = view.configSource === 'pasted' && (
-    <p className="cloud-small">
-      Firebase project <code>{view.projectId}</code> ·{' '}
-      {changing ? (
-        <span className="confirm-inline">
-          Stop using it on this device? Your work stays here.{' '}
-          <button className="link-btn" onClick={() => run(props.onForgetConfig)}>
-            Disconnect
-          </button>{' '}
-          <button className="link-btn" onClick={() => setChanging(false)}>
+  const differentProject =
+    view.configSource === 'pasted' &&
+    (changing ? (
+      <div className="cloud-confirm">
+        <span>Stop using Firebase project <code>{view.projectId}</code> on this device? Your work stays here.</span>
+        <span className="row-actions">
+          <button className="btn btn-quiet small" onClick={() => setChanging(false)}>
             Cancel
           </button>
+          <button className="btn btn-danger small" disabled={busy} onClick={() => run(props.onForgetConfig)}>
+            Disconnect
+          </button>
         </span>
-      ) : (
+      </div>
+    ) : (
+      <p className="cloud-small">
+        Firebase project <code>{view.projectId}</code> ·{' '}
         <button className="link-btn" onClick={() => setChanging(true)}>
           Use a different Firebase project
         </button>
-      )}
-    </p>
-  );
+      </p>
+    ));
 
   let body;
   if (state.phase === 'setup') {
