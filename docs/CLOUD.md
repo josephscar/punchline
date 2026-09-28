@@ -36,8 +36,12 @@ You need a Google account. Do these steps once; every device you write on then u
 
 ### 3. Create the database
 
-1. Open **Build → Firestore Database** and click **Create database**.
-2. Pick a location near you (it can't be changed later) and **Start in production mode**.
+Punchline uses **Cloud Firestore**, not the **Realtime Database**. They sit next to each other in the Firebase menu and look alike, so check the name. If you already created a Realtime Database, that's harmless; you can leave it or delete it.
+
+1. Open **Build → Firestore Database** (not "Realtime Database") and click **Create database**.
+2. If asked for an edition, choose **Standard**.
+3. Pick a location near you (it can't be changed later).
+4. When asked how to start, choose **production mode** (it may be worded "Start in production mode" or "locked"). Don't choose test mode: it lets anyone read your data for 30 days. Either way, step 4 below replaces these starting rules with Punchline's.
 
 ### 4. Publish Punchline's security rules
 
