@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// Punchline cloud storage.
+//
+//   projects/{projectId}                  title, format, owner and member list
+//   projects/{projectId}/scripts/{id}     one script (JSON in `body`)
+//   projects/{projectId}/drafts/{id}      one saved draft (JSON in `body`)
+//
+// Everything in a project is readable and writable by its members. Only the
+// owner can change who the members are or delete the project; any member may
+// remove themselves. This is ready for co-writers: sharing a project means
+// adding their user id to `memberIds`.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function project(projectId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)).data;
+    }
+
+    function isMember(projectId) {
+      return signedIn() && request.auth.uid in project(projectId).memberIds;
+    }
+
+    match /projects/{projectId} {
+      // Reading a project that doesn't exist yet is allowed so a new one can be
+      // created in a transaction (ids are random, so this reveals nothing).
+      allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.memberIds);
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid];
+
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.memberIds
+        && request.resource.data.ownerId == resource.data.ownerId
+        && (
+          request.resource.data.memberIds == resource.data.memberIds
+          || request.auth.uid == resource.data.ownerId
+          // A member leaving: the only change is removing themselves.
+          || request.resource.data.memberIds == resource.data.memberIds.removeAll([request.auth.uid])
+        );
+
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerId;
+
+      match /scripts/{scriptId} {
+        allow read, write: if isMember(projectId);
+      }
+
+      match /drafts/{draftId} {
+        allow read, write: if isMember(projectId);
+      }
+    }
+  }
+}

@@ -20,6 +20,8 @@ export default defineConfig(({ mode }) => {
   },
   test: {
     include: ['src/**/*.test.ts'],
+    // Tests against the Firebase emulators run with `npm run test:cloud`.
+    exclude: ['**/node_modules/**', 'src/**/*.emulator.test.ts'],
     environment: 'node',
   },
   };

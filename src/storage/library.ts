@@ -1,6 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import { characterName } from '../core/analysis';
 import { displayTitle, sanitizeDraft, sanitizeProject, sanitizeScript } from '../core/script';
+import type { SyncMeta } from '../cloud/types';
 import type { Draft, Project, Script } from '../core/types';
 
 /**
@@ -10,6 +11,7 @@ import type { Draft, Project, Script } from '../core/types';
  *   projects  — a series or a film; groups scripts
  *   scripts   — the working copy of each script (projectId null = unfiled)
  *   drafts    — frozen iterations of a script, newest first
+ *   sync      — what this device last synced to the cloud (see src/cloud)
  *
  * Falls back to memory when storage is unavailable (private windows,
  * sandboxed previews).
@@ -29,9 +31,11 @@ export interface Library {
   readonly persistent: boolean;
   list(): Promise<ScriptSummary[]>;
   load(id: string): Promise<Script | undefined>;
+  /** Every script, in full. */
+  allScripts(): Promise<Script[]>;
   save(script: Script): Promise<void>;
-  /** Deletes the script and all of its drafts. */
-  remove(id: string): Promise<void>;
+  /** Deletes the script and (unless `keepDrafts`) all of its drafts. */
+  remove(id: string, options?: { keepDrafts?: boolean }): Promise<void>;
 
   listProjects(): Promise<Project[]>;
   saveProject(project: Project): Promise<void>;
@@ -40,6 +44,7 @@ export interface Library {
 
   /** Drafts of one script, newest first. */
   listDrafts(scriptId: string): Promise<Draft[]>;
+  loadDraft(id: string): Promise<Draft | undefined>;
   saveDraft(draft: Draft): Promise<void>;
   removeDraft(id: string): Promise<void>;
 
@@ -51,17 +56,24 @@ export interface Library {
 
   getPref<T>(key: string): Promise<T | undefined>;
   setPref(key: string, value: unknown): Promise<void>;
+
+  getSyncMeta(key: string): Promise<SyncMeta | undefined>;
+  allSyncMeta(): Promise<SyncMeta[]>;
+  putSyncMeta(meta: SyncMeta): Promise<void>;
+  deleteSyncMeta(key: string): Promise<void>;
 }
 
 /** The handful of operations the library needs from a key-value store. */
+type Store = 'scripts' | 'projects' | 'drafts' | 'sync';
+
 interface Backend {
-  all(store: 'scripts' | 'projects'): Promise<unknown[]>;
+  all(store: 'scripts' | 'projects' | 'sync'): Promise<unknown[]>;
   draftsOf(scriptId: string): Promise<unknown[]>;
   countDrafts(scriptId: string): Promise<number>;
-  get(store: 'scripts' | 'drafts' | 'prefs', key: string): Promise<unknown>;
-  put(store: 'scripts' | 'projects' | 'drafts', value: { id: string }): Promise<void>;
+  get(store: Store | 'prefs', key: string): Promise<unknown>;
+  put(store: Store, value: { id: string } | SyncMeta): Promise<void>;
   putPref(key: string, value: unknown): Promise<void>;
-  delete(store: 'scripts' | 'projects' | 'drafts', key: string): Promise<void>;
+  delete(store: Store, key: string): Promise<void>;
 }
 
 function mergeMemory(scripts: Script[]): Record<string, number> {
@@ -97,6 +109,10 @@ class LibraryImpl implements Library {
     return readAll(await this.backend.all('scripts'), sanitizeScript);
   }
 
+  allScripts() {
+    return this.scripts();
+  }
+
   async list() {
     const scripts = await this.scripts();
     const summaries: ScriptSummary[] = [];
@@ -123,8 +139,8 @@ class LibraryImpl implements Library {
     await this.backend.put('scripts', structuredClone(script));
   }
 
-  async remove(id: string) {
-    for (const d of await this.listDrafts(id)) await this.backend.delete('drafts', d.id);
+  async remove(id: string, options: { keepDrafts?: boolean } = {}) {
+    if (!options.keepDrafts) for (const d of await this.listDrafts(id)) await this.backend.delete('drafts', d.id);
     await this.backend.delete('scripts', id);
   }
 
@@ -147,6 +163,11 @@ class LibraryImpl implements Library {
     return readAll(await this.backend.draftsOf(scriptId), sanitizeDraft).sort((a, b) => b.createdAt - a.createdAt);
   }
 
+  async loadDraft(id: string) {
+    const raw = await this.backend.get('drafts', id);
+    return raw ? sanitizeDraft(raw) : undefined;
+  }
+
   async saveDraft(draft: Draft) {
     await this.backend.put('drafts', structuredClone(draft));
   }
@@ -165,6 +186,22 @@ class LibraryImpl implements Library {
 
   async setPref(key: string, value: unknown) {
     await this.backend.putPref(key, value);
+  }
+
+  async getSyncMeta(key: string) {
+    return (await this.backend.get('sync', key)) as SyncMeta | undefined;
+  }
+
+  async allSyncMeta() {
+    return (await this.backend.all('sync')) as SyncMeta[];
+  }
+
+  async putSyncMeta(meta: SyncMeta) {
+    await this.backend.put('sync', { ...meta });
+  }
+
+  async deleteSyncMeta(key: string) {
+    await this.backend.delete('sync', key);
   }
 }
 
@@ -189,8 +226,10 @@ function memoryBackend(): Backend {
     scripts: new Map<string, unknown>(),
     projects: new Map<string, unknown>(),
     drafts: new Map<string, unknown>(),
+    sync: new Map<string, unknown>(),
     prefs: new Map<string, unknown>(),
   };
+  const keyOf = (value: { id: string } | SyncMeta) => ('key' in value ? value.key : value.id);
   return {
     all: async (store) => Array.from(stores[store].values(), (v) => structuredClone(v)),
     draftsOf: async (scriptId) =>
@@ -200,7 +239,7 @@ function memoryBackend(): Backend {
     countDrafts: async (scriptId) => Array.from(stores.drafts.values()).filter((d) => (d as Draft).scriptId === scriptId).length,
     get: async (store, key) => structuredClone(stores[store].get(key)),
     put: async (store, value) => {
-      stores[store].set(value.id, structuredClone(value));
+      stores[store].set(keyOf(value), structuredClone(value));
     },
     putPref: async (key, value) => {
       stores.prefs.set(key, value);
@@ -219,7 +258,7 @@ export function memoryLibrary(): Library {
 export async function openLibrary(): Promise<Library> {
   try {
     if (typeof indexedDB === 'undefined') throw new Error('no indexedDB');
-    const db = await openDB('punchline', 2, {
+    const db = await openDB('punchline', 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('scripts', { keyPath: 'id' });
@@ -229,6 +268,10 @@ export async function openLibrary(): Promise<Library> {
           // v2: projects and drafts. Existing scripts are upgraded as they're read.
           db.createObjectStore('projects', { keyPath: 'id' });
           db.createObjectStore('drafts', { keyPath: 'id' }).createIndex('scriptId', 'scriptId');
+        }
+        if (oldVersion < 3) {
+          // v3: cloud sync bookkeeping.
+          db.createObjectStore('sync', { keyPath: 'key' });
         }
       },
     });
