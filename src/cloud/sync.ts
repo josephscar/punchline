@@ -736,8 +736,8 @@ export class SyncedLibrary implements Library {
     await this.base.removeDraft(id);
     this.touch([key]);
   }
-  memory(options: { projectId: string | null; excludeId?: string }) {
-    return this.base.memory(options);
+  cast(options: { projectId: string | null; excludeId?: string }) {
+    return this.base.cast(options);
   }
   getPref<T>(key: string) {
     return this.base.getPref<T>(key);

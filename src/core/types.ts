@@ -79,12 +79,6 @@ export interface Script {
   titlePage: TitlePage;
   settings: ScriptSettings;
   elements: ScriptElement[];
-  /**
-   * Character names this script has "remembered", with how often each was
-   * used. Names stay here even after every line is deleted, so they keep
-   * being suggested (the writer can forget them from the Characters panel).
-   */
-  characterMemory: Record<string, number>;
   createdAt: number;
   updatedAt: number;
 }

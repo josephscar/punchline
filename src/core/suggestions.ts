@@ -6,9 +6,9 @@ import { plainText, type ElementKind, type ScriptElement } from './types';
  * Autocomplete ("SmartType") engine.
  *
  * Given the element the cursor is in and the text typed so far, returns
- * ranked suggestions. Character suggestions come from a memory of every
- * name used in this script and in the writer's other scripts, and are
- * ranked by who is most likely to speak next in the current scene.
+ * ranked suggestions. Character suggestions are the characters who speak in
+ * this script and in the other scripts of its project, as they are now, and
+ * are ranked by who is most likely to speak next in the current scene.
  */
 
 export interface Suggestion {
@@ -34,8 +34,8 @@ export interface SuggestionContext {
   index: number;
   elements: ScriptElement[];
   format: ScriptFormat;
-  /** Names remembered from this and other scripts, with usage counts. */
-  memory: Record<string, number>;
+  /** Characters who speak in the other scripts of this project, with how many speeches each has. */
+  projectCast: Record<string, number>;
 }
 
 const MAX = 8;
@@ -70,6 +70,34 @@ function rank(candidates: string[], typed: string): string[] {
 }
 
 /**
+ * The cues that have dialogue, so a name counts only while it's really in the
+ * script: a typo that was corrected, or a character whose every line was
+ * deleted, drops out. `skip` is the cue being typed, so "J" never suggests itself.
+ */
+function speakingCues(elements: ScriptElement[], skip = -1): { index: number; name: string }[] {
+  const out: { index: number; name: string }[] = [];
+  elements.forEach((el, i) => {
+    if (el.kind !== 'character' || i === skip) return;
+    const name = characterName(plainText(el));
+    if (!name || name.length > 40) return;
+    for (let j = i + 1; j < elements.length; j++) {
+      const next = elements[j];
+      if (next.kind === 'parenthetical') continue;
+      if (next.kind === 'dialogue' && plainText(next).trim()) out.push({ index: i, name });
+      break;
+    }
+  });
+  return out;
+}
+
+/** Characters who speak in `elements`, with how many speeches each has. */
+export function castOf(elements: ScriptElement[]): Record<string, number> {
+  const cast: Record<string, number> = {};
+  for (const { name } of speakingCues(elements)) cast[name] = (cast[name] ?? 0) + 1;
+  return cast;
+}
+
+/**
  * Who is likely to talk next? Walk back through the current scene: the
  * character who spoke before the current speaker comes first (conversations
  * alternate), then everyone else in the scene by recency, then the rest of
@@ -78,33 +106,31 @@ function rank(candidates: string[], typed: string): string[] {
 export function rankCharacters(
   elements: ScriptElement[],
   index: number,
-  memory: Record<string, number>,
+  projectCast: Record<string, number>,
 ): { name: string; detail?: string }[] {
-  const recent: string[] = [];
+  const cues = speakingCues(elements, index);
+  let sceneStart = -1;
   for (let i = index - 1; i >= 0; i--) {
-    const el = elements[i];
-    if (el.kind === 'scene_heading' || el.kind === 'act_start') break;
-    if (el.kind === 'character') {
-      const name = characterName(plainText(el));
-      if (name && !recent.includes(name)) recent.push(name);
+    if (elements[i].kind === 'scene_heading' || elements[i].kind === 'act_start') {
+      sceneStart = i;
+      break;
     }
   }
+  const recent: string[] = [];
+  for (const cue of cues.filter((c) => c.index < index && c.index > sceneStart).reverse()) {
+    if (!recent.includes(cue.name)) recent.push(cue.name);
+  }
   const counts = new Map<string, number>();
-  elements.forEach((el, i) => {
-    // Skip the cue being typed, or "J" would suggest itself.
-    if (el.kind !== 'character' || i === index) return;
-    const name = characterName(plainText(el));
-    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
-  });
-  for (const [name, n] of Object.entries(memory)) {
+  for (const { name } of cues) counts.set(name, (counts.get(name) ?? 0) + 1);
+  for (const [name, n] of Object.entries(projectCast)) {
     const key = characterName(name);
     if (key && n > 0 && !counts.has(key)) counts.set(key, 0);
   }
   const byUse = Array.from(counts.keys()).sort((a, b) => {
     const diff = (counts.get(b) ?? 0) - (counts.get(a) ?? 0);
     if (diff) return diff;
-    const mem = (memory[b] ?? 0) - (memory[a] ?? 0);
-    return mem || a.localeCompare(b);
+    const elsewhere = (projectCast[b] ?? 0) - (projectCast[a] ?? 0);
+    return elsewhere || a.localeCompare(b);
   });
 
   const out: { name: string; detail?: string }[] = [];
@@ -115,7 +141,7 @@ export function rankCharacters(
   if (lastSpeaker) out.push({ name: lastSpeaker, detail: 'just spoke' });
   for (const name of byUse) {
     const inScript = (counts.get(name) ?? 0) > 0;
-    out.push({ name, detail: inScript ? undefined : 'remembered' });
+    out.push({ name, detail: inScript ? undefined : 'in project' });
   }
   return uniq(out, (x) => x.name);
 }
@@ -132,7 +158,7 @@ function characterSuggestions(ctx: SuggestionContext): Suggestion[] {
   }
   if (before.includes(')')) return [];
   const typed = before.trim();
-  const ranked = rankCharacters(ctx.elements, ctx.index, ctx.memory);
+  const ranked = rankCharacters(ctx.elements, ctx.index, ctx.projectCast);
   const names = typed ? ranked.filter((c) => matches(c.name, typed) > 0) : ranked;
   const ordered = typed
     ? names
@@ -268,15 +294,3 @@ export function getSuggestions(ctx: SuggestionContext): Suggestion[] {
   }
 }
 
-/** Add the characters used in `elements` to a memory map (returns a new map). */
-export function rememberCharacters(memory: Record<string, number>, elements: ScriptElement[]): Record<string, number> {
-  const next: Record<string, number> = { ...memory };
-  const counts = new Map<string, number>();
-  for (const el of elements) {
-    if (el.kind !== 'character') continue;
-    const name = characterName(plainText(el));
-    if (name.length >= 1 && name.length <= 40) counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  for (const [name, n] of counts) next[name] = Math.max(next[name] ?? 0, n);
-  return next;
-}

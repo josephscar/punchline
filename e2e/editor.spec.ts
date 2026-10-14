@@ -152,10 +152,14 @@ test('suggestions are never picked for you: click one, or use the arrows and Ent
   await k.press('Enter'); // use it and move on to dialogue
   await k.type('Great.');
   expect((await elements(page)).slice(-4)).toEqual(['character: PAM', 'dialogue: Fine.', 'character: JIM', 'dialogue: Great.']);
-  // Names from the sample script are remembered across scripts.
+  // Only names in the script now are suggested: the JI typo is gone…
   await k.press('Enter');
+  await k.type('j');
+  await expect.poll(() => suggestions(page)).toEqual(['JIM']);
+  // …and the sample script's cast isn't, because the two scripts aren't in a project together.
+  await k.press('Backspace');
   await k.type('mar');
-  await expect.poll(() => suggestions(page)).toEqual(['MARCUS']);
+  await expect.poll(() => suggestions(page)).toEqual([]);
 });
 
 test('scene headings complete intro, location and time of day', async ({ page }) => {

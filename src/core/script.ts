@@ -1,5 +1,4 @@
 import { DEFAULT_FORMAT_ID, getFormat } from './formats';
-import { rememberCharacters } from './suggestions';
 import {
   defaultSettings,
   emptyTitlePage,
@@ -32,7 +31,6 @@ export function createScript(
     titlePage,
     settings: defaultSettings(),
     elements: options.blank ? [textElement('scene_heading', '')] : format.template(),
-    characterMemory: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -72,7 +70,6 @@ export function scriptFromParsed(
   const script = createScript({ formatId, projectId });
   script.titlePage = parsed.titlePage;
   script.elements = parsed.elements.length ? parsed.elements : [textElement('scene_heading', '')];
-  script.characterMemory = rememberCharacters({}, script.elements);
   return script;
 }
 
@@ -124,10 +121,6 @@ export function sanitizeScript(input: unknown): Script {
   if (!Array.isArray(raw.elements)) throw new Error('Script has no elements.');
   const base = createScript({ formatId: typeof raw.formatId === 'string' ? raw.formatId : undefined });
   const elements = sanitizeElements(raw.elements);
-  const memory: Record<string, number> = {};
-  if (raw.characterMemory && typeof raw.characterMemory === 'object') {
-    for (const [k, v] of Object.entries(raw.characterMemory)) if (typeof v === 'number') memory[k] = v;
-  }
   return {
     ...base,
     id: typeof raw.id === 'string' && raw.id ? raw.id : base.id,
@@ -135,7 +128,6 @@ export function sanitizeScript(input: unknown): Script {
     titlePage: sanitizeTitlePage(raw.titlePage),
     settings: sanitizeSettings(raw.settings),
     elements: elements.length ? elements : base.elements,
-    characterMemory: memory,
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : base.createdAt,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : base.updatedAt,
   };

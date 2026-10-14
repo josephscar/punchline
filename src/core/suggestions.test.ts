@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { singleCamSitcom as format } from './formats/singleCamSitcom';
-import { getSuggestions, rankCharacters, rememberCharacters, type SuggestionContext } from './suggestions';
+import { castOf, getSuggestions, rankCharacters, type SuggestionContext } from './suggestions';
 import { textElement as el, type ElementKind, type ScriptElement } from './types';
 
-function ctx(elements: ScriptElement[], index: number, kind: ElementKind, before: string, memory: Record<string, number> = {}): SuggestionContext {
-  return { elements, index, kind, before, after: '', format, memory };
+function ctx(elements: ScriptElement[], index: number, kind: ElementKind, before: string, projectCast: Record<string, number> = {}): SuggestionContext {
+  return { elements, index, kind, before, after: '', format, projectCast };
 }
 
 const scene = [
@@ -23,12 +23,12 @@ describe('character suggestions', () => {
     expect(ranked[1]).toEqual({ name: 'GARY', detail: 'just spoke' });
   });
 
-  it('offers remembered names from other scripts after the current cast', () => {
+  it('offers the cast of the project’s other scripts after this script’s cast', () => {
     const labels = getSuggestions(ctx(scene, 5, 'character', '', { MARCUS: 12, DANA: 3 })).map((s) => [s.label, s.detail]);
     expect(labels).toEqual([
       ['DANA', 'next in scene'],
       ['GARY', 'just spoke'],
-      ['MARCUS', 'remembered'],
+      ['MARCUS', 'in project'],
     ]);
   });
 
@@ -53,8 +53,28 @@ describe('character suggestions', () => {
     expect(getSuggestions(ctx(elements, 7, 'character', 'gary')).map((s) => s.label)).toEqual(['GARY', 'GARYSON']);
   });
 
-  it('remembers names with their usage counts', () => {
-    expect(rememberCharacters({ OLD: 2 }, scene)).toEqual({ OLD: 2, DANA: 1, GARY: 1 });
+  it('counts the characters who speak, with their number of speeches', () => {
+    const elements = [
+      ...scene.slice(0, 5),
+      el('character', 'DANA (CONT’D)'),
+      el('parenthetical', '(quietly)'),
+      el('dialogue', 'Anyway.'),
+    ];
+    expect(castOf(elements)).toEqual({ DANA: 2, GARY: 1 });
+  });
+
+  it('only suggests names that are in the script now', () => {
+    // A typo that was corrected, and a character whose every line was deleted, are gone.
+    const elements = [...scene.slice(0, 5), el('character', 'JAKE'), el('dialogue', 'Hey.'), el('character', '')];
+    expect(getSuggestions(ctx(elements, 7, 'character', 'j')).map((s) => s.label)).toEqual(['JAKE']);
+    expect(getSuggestions(ctx(elements, 7, 'character', 'mis')).map((s) => s.label)).toEqual([]);
+  });
+
+  it('ignores a cue nobody has said anything under yet', () => {
+    // "JAK" + Enter leaves an empty speech behind; it isn't a character until it has dialogue.
+    const elements = [...scene.slice(0, 5), el('character', 'JAK'), el('dialogue', ''), el('character', '')];
+    expect(getSuggestions(ctx(elements, 7, 'character', 'j')).map((s) => s.label)).toEqual([]);
+    expect(castOf(elements)).toEqual({ DANA: 1, GARY: 1 });
   });
 });
 

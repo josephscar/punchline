@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import { characterName } from '../core/analysis';
+import { castOf } from '../core/suggestions';
 import { displayTitle, sanitizeDraft, sanitizeProject, sanitizeScript } from '../core/script';
 import type { SyncMeta } from '../cloud/types';
 import type { Draft, Project, Script } from '../core/types';
@@ -49,10 +49,10 @@ export interface Library {
   removeDraft(id: string): Promise<void>;
 
   /**
-   * Character names remembered by the scripts in one project (or by all
-   * unfiled scripts when `projectId` is null), with usage counts.
+   * Characters who speak in the scripts of one project, as they are now, with
+   * how many speeches each has. Scripts outside a project share nothing (null).
    */
-  memory(options: { projectId: string | null; excludeId?: string }): Promise<Record<string, number>>;
+  cast(options: { projectId: string | null; excludeId?: string }): Promise<Record<string, number>>;
 
   getPref<T>(key: string): Promise<T | undefined>;
   setPref(key: string, value: unknown): Promise<void>;
@@ -76,15 +76,12 @@ interface Backend {
   delete(store: Store, key: string): Promise<void>;
 }
 
-function mergeMemory(scripts: Script[]): Record<string, number> {
-  const memory: Record<string, number> = {};
+function mergeCast(scripts: Script[]): Record<string, number> {
+  const cast: Record<string, number> = {};
   for (const s of scripts) {
-    for (const [name, n] of Object.entries(s.characterMemory ?? {})) {
-      const key = characterName(name);
-      if (key) memory[key] = (memory[key] ?? 0) + n;
-    }
+    for (const [name, n] of Object.entries(castOf(s.elements))) cast[name] = (cast[name] ?? 0) + n;
   }
-  return memory;
+  return cast;
 }
 
 function readAll<T>(rows: unknown[], sanitize: (raw: unknown) => T): T[] {
@@ -176,8 +173,9 @@ class LibraryImpl implements Library {
     await this.backend.delete('drafts', id);
   }
 
-  async memory({ projectId, excludeId }: { projectId: string | null; excludeId?: string }) {
-    return mergeMemory((await this.scripts()).filter((s) => s.id !== excludeId && s.projectId === projectId));
+  async cast({ projectId, excludeId }: { projectId: string | null; excludeId?: string }) {
+    if (!projectId) return {};
+    return mergeCast((await this.scripts()).filter((s) => s.id !== excludeId && s.projectId === projectId));
   }
 
   async getPref<T>(key: string) {

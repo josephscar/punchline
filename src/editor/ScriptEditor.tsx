@@ -49,7 +49,8 @@ interface Props {
   settings: ScriptSettings;
   /** Draft pages to mark changes against (revision marks), or null. */
   baseline: ScriptElement[] | null;
-  memory: Record<string, number>;
+  /** Characters who speak in the other scripts of this project, for suggestions. */
+  projectCast: Record<string, number>;
   /** Called (debounced) with the document and the `docKey` it belongs to. */
   onChange: (elements: ScriptElement[], docKey: string) => void;
   /** Called straight away on every edit, before the debounced onChange. */
@@ -85,12 +86,12 @@ function sliceToText(slice: Slice, format: ScriptFormat): string {
 export type Shortcut = 'save' | 'print' | 'help';
 
 export function ScriptEditor(props: Props) {
-  const { docKey, reloadToken, initialElements, format, settings, baseline, memory, ref } = props;
+  const { docKey, reloadToken, initialElements, format, settings, baseline, projectCast, ref } = props;
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Plugins read live values through refs so they never need rebuilding.
-  const live = useRef({ format, settings, baseline, memory, props });
-  live.current = { format, settings, baseline, memory, props };
+  const live = useRef({ format, settings, baseline, projectCast, props });
+  live.current = { format, settings, baseline, projectCast, props };
 
   const css = useMemo(() => formatCss(format), [format]);
   const loadedKey = useRef(docKey);
@@ -113,7 +114,7 @@ export function ScriptEditor(props: Props) {
     return EditorState.create({
       doc: elementsToDoc(elements),
       plugins: [
-        autocompletePlugin({ getFormat, getMemory: () => live.current.memory }),
+        autocompletePlugin({ getFormat, getProjectCast: () => live.current.projectCast }),
         smartTypePlugin(),
         history(),
         keymap({

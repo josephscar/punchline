@@ -12,7 +12,6 @@ import { endOfActIndex, moveScene } from './core/scenes';
 import { serializeProjectBackup, serializeScriptBackup, type Backup } from './core/backup';
 import { revisedIndices } from './core/diff';
 import { createDraft, createProject, createScript, displayTitle, suggestDraftName } from './core/script';
-import { rememberCharacters } from './core/suggestions';
 import {
   newId,
   plainText,
@@ -64,7 +63,8 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [compare, setCompare] = useState<{ from: string; to: string; current: ScriptElement[] } | null>(null);
-  const [otherMemory, setOtherMemory] = useState<Record<string, number>>({});
+  /** Characters who speak in the other scripts of the open script's project. */
+  const [projectCast, setProjectCast] = useState<Record<string, number>>({});
   const [layout, setLayout] = useState<ScriptLayout | null>(null);
   const [cursor, setCursor] = useState<CursorInfo>({ kind: 'action', index: 0, page: 1, empty: true });
   const [saveState, setSaveState] = useState<SaveState>('saved');
@@ -122,7 +122,7 @@ export function App() {
         setSummaries(await lib.list());
         setProjects(await lib.listProjects());
         setDrafts(await lib.listDrafts(current.id));
-        setOtherMemory(await lib.memory({ projectId: current.projectId, excludeId: current.id }));
+        setProjectCast(await lib.cast({ projectId: current.projectId, excludeId: current.id }));
         await lib.setPref('lastScriptId', current.id);
         if (__CLOUD__) {
           const hooks: Omit<SyncHooks, 'onStatus'> = {
@@ -189,14 +189,14 @@ export function App() {
     const s = scriptRef.current;
     if (!s) return null;
     const elements = editorRef.current?.getElements() ?? s.elements;
-    return { ...s, elements, characterMemory: rememberCharacters(s.characterMemory, elements) };
+    return { ...s, elements };
   }, []);
 
   // ---- Editor callbacks. ----
   const handleChange = useCallback(
     (elements: ScriptElement[], docKey: string) => {
       if (scriptRef.current?.id !== docKey) return;
-      update((s) => ({ ...s, elements, characterMemory: rememberCharacters(s.characterMemory, elements) }));
+      update((s) => ({ ...s, elements }));
     },
     [update],
   );
@@ -225,7 +225,7 @@ export function App() {
       setDrafts(await library.listDrafts(next.id));
       await library.setPref('lastScriptId', next.id);
       setSummaries(await library.list());
-      setOtherMemory(await library.memory({ projectId: next.projectId, excludeId: next.id }));
+      setProjectCast(await library.cast({ projectId: next.projectId, excludeId: next.id }));
       window.setTimeout(() => editorRef.current?.focus(), 50);
     },
     [library, latest],
@@ -289,7 +289,7 @@ export function App() {
       dirty.current = false;
       setScript(moved);
       await library.save(moved);
-      setOtherMemory(await library.memory({ projectId, excludeId: id }));
+      setProjectCast(await library.cast({ projectId, excludeId: id }));
     } else {
       const other = await library.load(id);
       if (other) await library.save({ ...other, projectId, updatedAt: Date.now() });
@@ -319,7 +319,7 @@ export function App() {
     setSummaries(await library.list());
     if (script?.projectId === id) {
       setScript((s) => (s ? { ...s, projectId: null } : s));
-      setOtherMemory(await library.memory({ projectId: null, excludeId: script.id }));
+      setProjectCast(await library.cast({ projectId: null, excludeId: script.id }));
     }
   };
 
@@ -368,7 +368,6 @@ export function App() {
     const next = createScript({ formatId: current.formatId, projectId: current.projectId });
     next.titlePage = structuredClone(draft.titlePage);
     next.elements = structuredClone(draft.elements);
-    next.characterMemory = rememberCharacters(current.characterMemory, next.elements);
     next.settings = { ...current.settings, revisionBaseline: null };
     await library.save(next);
     await switchTo(next);
@@ -435,6 +434,10 @@ export function App() {
     if (change.projects) setProjects(await lib.listProjects());
     setSummaries(await lib.list());
     if (!current) return;
+    // Another script in this project may have gained or lost characters.
+    if (current.projectId && change.scripts?.some((id) => id !== current.id)) {
+      setProjectCast(await lib.cast({ projectId: current.projectId, excludeId: current.id }));
+    }
     if (change.scripts?.includes(current.id) || change.projects) {
       const fresh = await lib.load(current.id);
       if (!fresh) {
@@ -540,24 +543,16 @@ export function App() {
 
   // ---- Characters. ----
   const analysis = useMemo(() => analyzeScript(script?.elements ?? []), [script?.elements]);
-  const memory = useMemo(() => {
-    const merged = { ...otherMemory };
-    for (const [k, v] of Object.entries(script?.characterMemory ?? {})) merged[k] = (merged[k] ?? 0) + v;
-    return merged;
-  }, [otherMemory, script?.characterMemory]);
   const inScript = useMemo(() => new Set(analysis.characters.map((c) => c.name)), [analysis.characters]);
-  const rememberedHere = useMemo(
-    () => Object.keys(script?.characterMemory ?? {}).filter((n) => !inScript.has(n)).sort(),
-    [script?.characterMemory, inScript],
-  );
-  const rememberedElsewhere = useMemo(
+  /** The project's recurring cast that doesn't appear in this script (yet). */
+  const castElsewhere = useMemo(
     () =>
-      Object.entries(otherMemory)
-        .filter(([n]) => !inScript.has(n) && !(script?.characterMemory ?? {})[n])
+      Object.entries(projectCast)
+        .filter(([n]) => !inScript.has(n))
         .sort((a, b) => b[1] - a[1])
         .map(([n]) => n)
         .slice(0, 40),
-    [otherMemory, inScript, script?.characterMemory],
+    [projectCast, inScript],
   );
 
   const renameCharacter = (from: string, to: string) => {
@@ -569,22 +564,9 @@ export function App() {
       const rest = text.slice(text.indexOf('(') >= 0 ? text.indexOf('(') : text.length);
       return { kind: el.kind, runs: [{ text: rest ? `${to} ${rest.trim()}` : to }] };
     });
-    update((s) => {
-      const characterMemory = { ...s.characterMemory };
-      characterMemory[to] = (characterMemory[to] ?? 0) + (characterMemory[from] ?? 0);
-      delete characterMemory[from];
-      return { ...s, characterMemory };
-    });
     editorRef.current?.replaceElements(renamed);
     notify(`Renamed ${from} to ${to}`);
   };
-
-  const forget = (name: string) =>
-    update((s) => {
-      const characterMemory = { ...s.characterMemory };
-      delete characterMemory[name];
-      return { ...s, characterMemory };
-    });
 
   const moveSceneTo = (from: number, target: number | { actEnd: number }) => {
     const elements = editorRef.current?.getElements();
@@ -752,9 +734,8 @@ export function App() {
               analysis={analysis}
               elementPages={layout?.elementPages ?? []}
               cursorIndex={cursor.index}
-              rememberedHere={rememberedHere}
-              rememberedElsewhere={rememberedElsewhere}
-              elsewhereLabel={project ? `From other scripts in ${project.title}` : 'From your other scripts'}
+              castElsewhere={castElsewhere}
+              projectTitle={project?.title ?? null}
               draftCount={drafts.length}
               drafts={
                 <DraftsPanel
@@ -772,7 +753,6 @@ export function App() {
               showSceneNumbers={script.settings.sceneNumbers}
               onGo={goTo}
               onRename={setRenaming}
-              onForget={forget}
               onAddNote={() => editorRef.current?.insertElement('note')}
               onMoveScene={moveSceneTo}
             />
@@ -787,7 +767,7 @@ export function App() {
             format={format}
             settings={script.settings}
             baseline={baseline}
-            memory={memory}
+            projectCast={projectCast}
             onChange={handleChange}
             onEdit={markEdited}
             onLayout={setLayout}

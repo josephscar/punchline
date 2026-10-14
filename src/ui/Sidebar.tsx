@@ -10,19 +10,16 @@ interface Props {
   analysis: ScriptAnalysis;
   elementPages: number[];
   cursorIndex: number;
-  /** Names this script remembers but no longer uses. */
-  rememberedHere: string[];
-  /** Names used in the writer's other scripts (in the same project). */
-  rememberedElsewhere: string[];
-  /** Heading for `rememberedElsewhere`. */
-  elsewhereLabel: string;
+  /** Characters who speak in the project's other scripts but not in this one. */
+  castElsewhere: string[];
+  /** The project this script is in, if any. */
+  projectTitle: string | null;
   /** The Drafts tab's content and how many drafts there are. */
   drafts: ReactNode;
   draftCount: number;
   showSceneNumbers: boolean;
   onGo: (index: number) => void;
   onRename: (name: string) => void;
-  onForget: (name: string) => void;
   onAddNote: () => void;
   /** Move the scene at `from` before element `target`, or to the end of the act at `actEnd`. */
   onMoveScene: (from: number, target: number | { actEnd: number }) => void;
@@ -171,7 +168,7 @@ export function Sidebar(props: Props) {
 
   const charactersPanel = (
     <div className="nav-panel">
-      {analysis.characters.length === 0 && <p className="nav-empty">Characters appear here once they speak. Names are remembered and suggested as you type.</p>}
+      {analysis.characters.length === 0 && <p className="nav-empty">Characters appear here once they speak. Everyone who speaks in this script, or in other scripts of its project, is suggested as you type a character name.</p>}
       {analysis.characters.length > 0 && (
         <table className="cast-table">
           <thead>
@@ -204,28 +201,12 @@ export function Sidebar(props: Props) {
           </tbody>
         </table>
       )}
-      {props.rememberedHere.length > 0 && (
+      {props.projectTitle && props.castElsewhere.length > 0 && (
         <section className="remembered">
-          <h3>Remembered in this script</h3>
-          <p className="nav-hint">Still suggested when you type a character name.</p>
-          <ul>
-            {props.rememberedHere.map((n) => (
-              <li key={n}>
-                <span>{n}</span>
-                <button className="link-btn" onClick={() => props.onForget(n)}>
-                  Forget
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {props.rememberedElsewhere.length > 0 && (
-        <section className="remembered">
-          <h3>{props.elsewhereLabel}</h3>
+          <h3>From other scripts in {props.projectTitle}</h3>
           <p className="nav-hint">Recurring cast, suggested here too.</p>
           <ul className="chips">
-            {props.rememberedElsewhere.map((n) => (
+            {props.castElsewhere.map((n) => (
               <li key={n} className="chip">
                 {n}
               </li>

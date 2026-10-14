@@ -92,4 +92,4 @@ The paginator (`src/core/layout/paginate.ts`) follows the conventions of profess
 | Fountain (`.fountain`) | ✓ | ✓ | Acts become `> **_ACT ONE_** <` after a `===` page break. Notes become `[[…]]`. Bold, italic and underline are kept. |
 | Final Draft (`.fdx`) | ✓ | ✓ | Uses Final Draft's TV element names, New Act and End of Act. Notes are not written, because Final Draft attaches notes to ranges of text. |
 | PDF | | ✓ | Print-ready, with Courier Prime embedded and an optional title page. |
-| Punchline (`.punchline`) | ✓ | ✓ | A script with all its drafts, settings and remembered characters, or a whole project. Imports always create copies. |
+| Punchline (`.punchline`) | ✓ | ✓ | A script with all its drafts and settings, or a whole project. Imports always create copies. |

@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { openDB } from 'idb';
 import { describe, expect, it } from 'vitest';
 import { createDraft, createProject, createScript } from '../core/script';
+import { textElement } from '../core/types';
 import { memoryLibrary, openLibrary } from './library';
 
 describe('library', () => {
@@ -11,9 +12,9 @@ describe('library', () => {
     const project = createProject('Paper Trail');
     await lib.saveProject(project);
     const pilot = createScript({ title: 'PAPER TRAIL', projectId: project.id });
-    pilot.characterMemory = { DANA: 3 };
+    pilot.elements = [textElement('character', 'DANA'), textElement('dialogue', 'Hi.'), textElement('character', 'JAK'), textElement('dialogue', '')];
     const other = createScript({ title: 'SOMETHING ELSE' });
-    other.characterMemory = { ZED: 1 };
+    other.elements = [textElement('character', 'ZED'), textElement('dialogue', 'Yo.')];
     await lib.save(pilot);
     await lib.save(other);
     const d1 = createDraft(pilot, { name: 'First Draft' });
@@ -24,9 +25,10 @@ describe('library', () => {
     expect(list.find((s) => s.id === pilot.id)).toMatchObject({ projectId: project.id, drafts: 2 });
     expect((await lib.listDrafts(pilot.id)).map((d) => d.name)).toEqual(['Draft 2', 'First Draft']);
 
-    // Character memory is shared within a project only.
-    expect(await lib.memory({ projectId: project.id })).toEqual({ DANA: 3 });
-    expect(await lib.memory({ projectId: null })).toEqual({ ZED: 1 });
+    // The cast is shared within a project only, and only characters who speak count.
+    expect(await lib.cast({ projectId: project.id })).toEqual({ DANA: 1 });
+    expect(await lib.cast({ projectId: project.id, excludeId: pilot.id })).toEqual({});
+    expect(await lib.cast({ projectId: null })).toEqual({});
 
     // Deleting a project keeps its scripts, unfiled.
     await lib.removeProject(project.id);

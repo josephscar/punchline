@@ -17,8 +17,8 @@ import { docToElements } from '../convert';
 
 export interface AutocompleteOptions {
   getFormat: () => ScriptFormat;
-  /** Character names remembered across this and other scripts. */
-  getMemory: () => Record<string, number>;
+  /** Characters who speak in the other scripts of this project. */
+  getProjectCast: () => Record<string, number>;
 }
 
 interface AcState {
@@ -57,7 +57,7 @@ function compute(state: EditorState, options: AutocompleteOptions): Suggestion[]
     index: el.index,
     elements: elementsOf(state),
     format: options.getFormat(),
-    memory: options.getMemory(),
+    projectCast: options.getProjectCast(),
   });
 }
 

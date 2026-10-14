@@ -22,11 +22,11 @@ describe('scripts', () => {
     const s = sanitizeScript({
       elements: [{ kind: 'action', runs: [{ text: 'ok', bold: 1 }] }, { kind: 'bogus', runs: [] }, null],
       titlePage: { title: 5 },
-      characterMemory: { A: 1, B: 'x' },
+      characterMemory: { A: 1, B: 'x' }, // from older versions; names now come from the script itself
     });
     expect(s.elements).toEqual([{ kind: 'action', runs: [{ text: 'ok', bold: true }] }]);
     expect(s.titlePage.title).toBe('5');
-    expect(s.characterMemory).toEqual({ A: 1 });
+    expect('characterMemory' in s).toBe(false);
     expect(() => sanitizeScript({})).toThrow();
   });
 

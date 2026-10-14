@@ -62,7 +62,7 @@ export function HelpDialog(props: { open: boolean; format: ScriptFormat; onClose
               <b>Tab</b> cycles the current line through <b>Scene Heading → Action → Character → Transition</b>, with or without text; <b>Shift+Tab</b> goes back. For every other element use the menu or <kbd>{ALT}</kbd>+number.
             </li>
             <li>
-              <b>Character names are remembered.</b> On a new Character line the list predicts who speaks next, with the likeliest first. Click a name to use it, or pick with <kbd>↓</kbd> and <kbd>Enter</kbd>. Nothing is chosen for you.
+              <b>Character names are suggested.</b> Everyone who speaks in this script, or in another script of its project, is offered on a new Character line, with whoever likely speaks next first. Correct a typo or delete a character’s last line and the name stops appearing. Click a name to use it, or pick with <kbd>↓</kbd> and <kbd>Enter</kbd>. Nothing is chosen for you.
             </li>
             <li>
               Scene headings complete in three steps: <b>INT./EXT.</b> → locations you’ve used → time of day.

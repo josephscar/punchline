@@ -46,7 +46,7 @@ describe('formats', () => {
   it('suggests the next act in each format’s own order', () => {
     const next = (format: typeof drama, acts: string[]) => {
       const elements = [...acts.map((a) => el('act_start', a)), el('act_start', '')];
-      return getSuggestions({ kind: 'act_start', before: '', after: '', index: acts.length, elements, format, memory: {} })[0].label;
+      return getSuggestions({ kind: 'act_start', before: '', after: '', index: acts.length, elements, format, projectCast: {} })[0].label;
     };
     expect(next(drama, [])).toBe('TEASER');
     expect(next(drama, ['TEASER'])).toBe('ACT ONE');
@@ -58,7 +58,7 @@ describe('formats', () => {
 
   it('ends a drama act with END OF EPISODE on offer', () => {
     const elements = [el('act_start', 'ACT FIVE'), el('act_end', '')];
-    const labels = getSuggestions({ kind: 'act_end', before: '', after: '', index: 1, elements, format: drama, memory: {} }).map((s) => s.label);
+    const labels = getSuggestions({ kind: 'act_end', before: '', after: '', index: 1, elements, format: drama, projectCast: {} }).map((s) => s.label);
     expect(labels.slice(0, 2)).toEqual(['END OF ACT FIVE', 'END OF EPISODE']);
   });
 });
